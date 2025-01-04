@@ -1,7 +1,6 @@
 "use client"
 
 import { useState } from "react"
-import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Switch } from "@/components/ui/switch"
 import { useToast } from "@/components/ui/use-toast"
@@ -15,6 +14,14 @@ interface NotificationSettingsProps {
   onUpdate: (profile: Profile) => void
 }
 
+const REMINDER_OPTIONS = [
+  { value: "15", label: "15 minutes before" },
+  { value: "30", label: "30 minutes before" },
+  { value: "60", label: "1 hour before" },
+  { value: "1440", label: "1 day before" },
+  { value: "10080", label: "1 week before" },
+] as const
+
 export function NotificationSettings({ profile, onUpdate }: NotificationSettingsProps) {
   const [isSaving, setIsSaving] = useState(false)
   const { toast } = useToast()
@@ -22,18 +29,10 @@ export function NotificationSettings({ profile, onUpdate }: NotificationSettings
   const handleNotificationToggle = async (enabled: boolean) => {
     setIsSaving(true)
     try {
-      const updatedPreferences = {
-        ...profile.calendar_preferences,
-        notifications: {
-          ...profile.calendar_preferences?.notifications,
-          enabled,
-        },
-      }
-
       const { error } = await supabase
         .from('profiles')
         .update({
-          calendar_preferences: updatedPreferences,
+          notifications_enabled: enabled,
         })
         .eq('id', profile.id)
 
@@ -46,7 +45,7 @@ export function NotificationSettings({ profile, onUpdate }: NotificationSettings
 
       onUpdate({
         ...profile,
-        calendar_preferences: updatedPreferences,
+        notifications_enabled: enabled,
       })
     } catch (error) {
       console.error('Error updating notification settings:', error)
@@ -63,18 +62,11 @@ export function NotificationSettings({ profile, onUpdate }: NotificationSettings
   const handleReminderTimeChange = async (minutes: string) => {
     setIsSaving(true)
     try {
-      const updatedPreferences = {
-        ...profile.calendar_preferences,
-        notifications: {
-          ...profile.calendar_preferences?.notifications,
-          beforeEvent: parseInt(minutes),
-        },
-      }
-
+      const reminderTime = parseInt(minutes)
       const { error } = await supabase
         .from('profiles')
         .update({
-          calendar_preferences: updatedPreferences,
+          reminder_time: reminderTime,
         })
         .eq('id', profile.id)
 
@@ -87,7 +79,7 @@ export function NotificationSettings({ profile, onUpdate }: NotificationSettings
 
       onUpdate({
         ...profile,
-        calendar_preferences: updatedPreferences,
+        reminder_time: reminderTime,
       })
     } catch (error) {
       console.error('Error updating reminder time:', error)
@@ -105,7 +97,7 @@ export function NotificationSettings({ profile, onUpdate }: NotificationSettings
     <div className="space-y-6">
       <Card>
         <CardHeader>
-          <CardTitle>Calendar Notifications</CardTitle>
+          <CardTitle>Notification Settings</CardTitle>
           <CardDescription>
             Configure how and when you want to receive notifications about your gift events.
           </CardDescription>
@@ -119,29 +111,29 @@ export function NotificationSettings({ profile, onUpdate }: NotificationSettings
               </p>
             </div>
             <Switch
-              checked={profile.calendar_preferences?.notifications?.enabled ?? false}
+              checked={profile.notifications_enabled}
               onCheckedChange={handleNotificationToggle}
               disabled={isSaving}
             />
           </div>
 
-          {profile.calendar_preferences?.notifications?.enabled && (
+          {profile.notifications_enabled && (
             <div className="space-y-2">
               <Label>Reminder Time</Label>
               <Select
                 disabled={isSaving}
-                value={String(profile.calendar_preferences?.notifications?.beforeEvent ?? 60)}
+                value={String(profile.reminder_time ?? 60)}
                 onValueChange={handleReminderTimeChange}
               >
                 <SelectTrigger>
                   <SelectValue placeholder="Select reminder time" />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="15">15 minutes before</SelectItem>
-                  <SelectItem value="30">30 minutes before</SelectItem>
-                  <SelectItem value="60">1 hour before</SelectItem>
-                  <SelectItem value="1440">1 day before</SelectItem>
-                  <SelectItem value="10080">1 week before</SelectItem>
+                  {REMINDER_OPTIONS.map(option => (
+                    <SelectItem key={option.value} value={option.value}>
+                      {option.label}
+                    </SelectItem>
+                  ))}
                 </SelectContent>
               </Select>
             </div>

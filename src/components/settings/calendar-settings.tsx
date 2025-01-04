@@ -1,6 +1,6 @@
 "use client"
 
-import { useState } from "react"
+import { useState, useEffect } from "react"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Switch } from "@/components/ui/switch"
@@ -15,10 +15,57 @@ interface CalendarSettingsProps {
 
 export function CalendarSettings({ profile, onUpdate }: CalendarSettingsProps) {
   const [isConnectingGoogle, setIsConnectingGoogle] = useState(false)
+  const [isTogglingApple, setIsTogglingApple] = useState(false)
   const { toast } = useToast()
+
+  // Initialize Google API
+  useEffect(() => {
+    const initGoogleApi = async () => {
+      try {
+        await new Promise((resolve, reject) => {
+          window.gapi.load('client:auth2', () => {
+            window.gapi.client
+              .init({
+                apiKey: process.env.NEXT_PUBLIC_GOOGLE_CALENDAR_API_KEY,
+                clientId: process.env.NEXT_PUBLIC_GOOGLE_CALENDAR_CLIENT_ID,
+                discoveryDocs: ['https://www.googleapis.com/discovery/v1/apis/calendar/v3/rest'],
+                scope: 'https://www.googleapis.com/auth/calendar.events',
+              })
+              .then(resolve)
+              .catch(reject)
+          })
+        })
+      } catch (error) {
+        console.error('Failed to initialize Google API:', error)
+        toast({
+          title: "Error",
+          description: "Failed to initialize Google Calendar API. Please try again.",
+          variant: "destructive",
+        })
+      }
+    }
+
+    if (window.gapi) {
+      initGoogleApi()
+    } else {
+      const script = document.createElement('script')
+      script.src = 'https://apis.google.com/js/api.js'
+      script.onload = () => initGoogleApi()
+      document.body.appendChild(script)
+    }
+  }, [toast])
 
   // Handle Google Calendar connection
   const handleConnectGoogle = async () => {
+    if (!window.gapi?.auth2) {
+      toast({
+        title: "Error",
+        description: "Google Calendar API is not initialized. Please try again.",
+        variant: "destructive",
+      })
+      return
+    }
+
     try {
       setIsConnectingGoogle(true)
       
@@ -37,7 +84,8 @@ export function CalendarSettings({ profile, onUpdate }: CalendarSettingsProps) {
         .update({
           google_calendar_refresh_token: authResponse.refresh_token,
           google_calendar_access_token: authResponse.access_token,
-          google_calendar_token_expiry: new Date(authResponse.expires_at).toISOString()
+          google_calendar_token_expiry: new Date(authResponse.expires_at).toISOString(),
+          google_calendar_enabled: true
         })
         .eq('id', profile.id)
 
@@ -53,7 +101,8 @@ export function CalendarSettings({ profile, onUpdate }: CalendarSettingsProps) {
         ...profile,
         google_calendar_refresh_token: authResponse.refresh_token,
         google_calendar_access_token: authResponse.access_token,
-        google_calendar_token_expiry: new Date(authResponse.expires_at).toISOString()
+        google_calendar_token_expiry: new Date(authResponse.expires_at).toISOString(),
+        google_calendar_enabled: true
       })
     } catch (error) {
       console.error('Failed to connect Google Calendar:', error)
@@ -70,10 +119,11 @@ export function CalendarSettings({ profile, onUpdate }: CalendarSettingsProps) {
   // Handle Apple Calendar toggle
   const handleAppleToggle = async (enabled: boolean) => {
     try {
+      setIsTogglingApple(true)
       const { error } = await supabase
         .from('profiles')
         .update({
-          apple_calendar_sync_enabled: enabled
+          apple_calendar_enabled: enabled
         })
         .eq('id', profile.id)
 
@@ -89,7 +139,7 @@ export function CalendarSettings({ profile, onUpdate }: CalendarSettingsProps) {
       // Update the local profile state
       onUpdate({
         ...profile,
-        apple_calendar_sync_enabled: enabled
+        apple_calendar_enabled: enabled
       })
     } catch (error) {
       console.error('Failed to toggle Apple Calendar:', error)
@@ -98,6 +148,8 @@ export function CalendarSettings({ profile, onUpdate }: CalendarSettingsProps) {
         description: "Failed to update Apple Calendar settings. Please try again.",
         variant: "destructive",
       })
+    } finally {
+      setIsTogglingApple(false)
     }
   }
 
@@ -111,7 +163,7 @@ export function CalendarSettings({ profile, onUpdate }: CalendarSettingsProps) {
           </CardDescription>
         </CardHeader>
         <CardContent>
-          {profile.google_calendar_refresh_token ? (
+          {profile.google_calendar_enabled ? (
             <div className="flex items-center justify-between">
               <div>
                 <p className="font-medium">Connected</p>
@@ -124,7 +176,7 @@ export function CalendarSettings({ profile, onUpdate }: CalendarSettingsProps) {
                 onClick={() => handleConnectGoogle()}
                 disabled={isConnectingGoogle}
               >
-                Reconnect
+                {isConnectingGoogle ? "Reconnecting..." : "Reconnect"}
               </Button>
             </div>
           ) : (
@@ -132,7 +184,7 @@ export function CalendarSettings({ profile, onUpdate }: CalendarSettingsProps) {
               onClick={() => handleConnectGoogle()}
               disabled={isConnectingGoogle}
             >
-              Connect Google Calendar
+              {isConnectingGoogle ? "Connecting..." : "Connect Google Calendar"}
             </Button>
           )}
         </CardContent>
@@ -154,8 +206,9 @@ export function CalendarSettings({ profile, onUpdate }: CalendarSettingsProps) {
               </p>
             </div>
             <Switch
-              checked={profile.apple_calendar_sync_enabled}
+              checked={profile.apple_calendar_enabled}
               onCheckedChange={handleAppleToggle}
+              disabled={isTogglingApple}
             />
           </div>
         </CardContent>
