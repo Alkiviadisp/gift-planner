@@ -1,7 +1,7 @@
 "use client"
 
 import { useState, useEffect } from "react"
-import { Plus, ExternalLink, Trash2, Image } from "lucide-react"
+import { Plus, ExternalLink, Trash2 } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
@@ -29,7 +29,6 @@ import {
   DialogContent,
   DialogHeader,
   DialogTitle,
-  DialogTrigger,
 } from "@/components/ui/dialog"
 import { useToast } from "@/components/ui/use-toast"
 import { Gift, giftsService } from "@/lib/gifts/gifts-service"
@@ -47,7 +46,6 @@ export function GiftList({ categoryId, onGiftChange }: GiftListProps) {
   const [showAddGiftDialog, setShowAddGiftDialog] = useState(false)
   const [newGift, setNewGift] = useState({
     recipient: "",
-    recipientEmail: "",
     name: "",
     price: "",
     url: "",
@@ -78,26 +76,6 @@ export function GiftList({ categoryId, onGiftChange }: GiftListProps) {
     }
   }
 
-  const handleEmailLookup = async (email: string) => {
-    if (!email) {
-      setNewGift(prev => ({ ...prev, recipient: "" }))
-      return
-    }
-
-    try {
-      const user = await giftsService.lookupRecipientByEmail(email)
-      if (user?.nickname) {
-        setNewGift(prev => ({ ...prev, recipient: user.nickname }))
-        toast({
-          title: "Success",
-          description: "Found user's nickname!",
-        })
-      }
-    } catch (error) {
-      console.error("Error looking up email:", error)
-    }
-  }
-
   const handleAddGift = async (e: React.FormEvent) => {
     e.preventDefault()
     if (!newGift.recipient.trim() || !newGift.name.trim()) {
@@ -112,13 +90,12 @@ export function GiftList({ categoryId, onGiftChange }: GiftListProps) {
     try {
       const gift = await giftsService.createGift(user!.id, categoryId, {
         recipient: newGift.recipient.trim(),
-        recipientEmail: newGift.recipientEmail.trim() || undefined,
         name: newGift.name.trim(),
         price: newGift.price ? parseFloat(newGift.price) : undefined,
         url: newGift.url.trim() || undefined,
       })
       setGifts((prev) => [...prev, gift])
-      setNewGift({ recipient: "", recipientEmail: "", name: "", price: "", url: "" })
+      setNewGift({ recipient: "", name: "", price: "", url: "" })
       setShowAddGiftDialog(false)
       onGiftChange?.()
       toast({
@@ -206,16 +183,7 @@ export function GiftList({ categoryId, onGiftChange }: GiftListProps) {
           <TableBody>
             {gifts.map((gift) => (
               <TableRow key={gift.id}>
-                <TableCell>
-                  <div className="space-y-1">
-                    <div>{gift.recipient}</div>
-                    {gift.recipientEmail && (
-                      <div className="text-sm text-muted-foreground">
-                        {gift.recipientEmail}
-                      </div>
-                    )}
-                  </div>
-                </TableCell>
+                <TableCell>{gift.recipient}</TableCell>
                 <TableCell>{gift.name}</TableCell>
                 <TableCell>
                   {gift.price ? `$${gift.price.toFixed(2)}` : "-"}
@@ -278,20 +246,6 @@ export function GiftList({ categoryId, onGiftChange }: GiftListProps) {
             <DialogTitle>Add New Gift</DialogTitle>
           </DialogHeader>
           <form onSubmit={handleAddGift} className="space-y-4">
-            <div className="space-y-2">
-              <Label htmlFor="recipientEmail">Recipient Email (optional)</Label>
-              <Input
-                id="recipientEmail"
-                type="email"
-                placeholder="Enter their email to find their nickname"
-                value={newGift.recipientEmail}
-                onChange={(e) => {
-                  const email = e.target.value
-                  setNewGift((prev) => ({ ...prev, recipientEmail: email }))
-                  handleEmailLookup(email)
-                }}
-              />
-            </div>
             <div className="space-y-2">
               <Label htmlFor="recipient">Recipient Name</Label>
               <Input

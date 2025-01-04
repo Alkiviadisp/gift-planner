@@ -3,7 +3,6 @@ import { supabase } from "@/lib/supabase/client"
 export interface Gift {
   id: string
   recipient: string
-  recipientEmail: string | null
   name: string
   price: number | null
   url: string | null
@@ -15,7 +14,6 @@ export interface GiftRecord {
   id: string
   user_id: string
   category_id: string
-  recipient_email: string | null
   recipient: string
   name: string
   description: string | null
@@ -161,7 +159,6 @@ export const giftsService = {
     return (data as GiftRecord[]).map((record) => ({
       id: record.id,
       recipient: record.recipient,
-      recipientEmail: record.recipient_email,
       name: record.name,
       price: record.price,
       url: record.url,
@@ -170,45 +167,11 @@ export const giftsService = {
     }))
   },
 
-  async lookupRecipientByEmail(email: string): Promise<{ nickname: string } | null> {
-    try {
-      console.log('Looking up email:', email)
-
-      // Try to find the profile directly
-      const { data, error } = await supabase
-        .rpc('lookup_user_by_email', {
-          lookup_email: email
-        })
-
-      console.log('Profile lookup result:', { data, error })
-
-      if (error) {
-        console.error('Error looking up profile:', {
-          message: error.message,
-          code: error.code,
-          details: error.details,
-          hint: error.hint
-        })
-        return null
-      }
-
-      return data ? { nickname: data.nickname } : null
-    } catch (err: any) {
-      console.error('Unexpected error in lookupRecipientByEmail:', {
-        name: err?.name || 'Unknown Error',
-        message: err?.message || 'No error message available',
-        stack: err?.stack || 'No stack trace available'
-      })
-      return null
-    }
-  },
-
   async createGift(
     userId: string,
     categoryId: string,
     gift: {
       recipient: string
-      recipientEmail?: string
       name: string
       price?: number
       url?: string
@@ -247,7 +210,6 @@ export const giftsService = {
             user_id: userId,
             category_id: categoryId,
             recipient: gift.recipient,
-            recipient_email: gift.recipientEmail || null,
             name: gift.name,
             price: gift.price || null,
             url: gift.url || null,
@@ -266,7 +228,6 @@ export const giftsService = {
       return {
         id: data.id,
         recipient: data.recipient,
-        recipientEmail: data.recipient_email,
         name: data.name,
         price: data.price,
         url: data.url,
@@ -284,7 +245,6 @@ export const giftsService = {
     giftId: string,
     updates: Partial<{
       recipient: string
-      recipientEmail: string | null
       name: string
       price: number | null
       url: string | null
@@ -295,7 +255,6 @@ export const giftsService = {
     
     const updateData = {
       ...(updates.recipient !== undefined && { recipient: updates.recipient }),
-      ...(updates.recipientEmail !== undefined && { recipient_email: updates.recipientEmail }),
       ...(updates.name !== undefined && { name: updates.name }),
       ...(updates.price !== undefined && { price: updates.price }),
       ...(updates.url !== undefined && { url: updates.url }),
