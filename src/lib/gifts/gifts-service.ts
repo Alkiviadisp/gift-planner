@@ -40,8 +40,6 @@ const fetchWithTimeout = async (url: string, timeout: number): Promise<Response>
   try {
     const response = await fetch(url, {
       signal: controller.signal,
-      mode: 'no-cors', // Add no-cors mode to handle CORS restrictions
-      credentials: 'omit',
       headers: {
         'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8',
         'Accept-Language': 'en-US,en;q=0.5',
@@ -55,36 +53,81 @@ const fetchWithTimeout = async (url: string, timeout: number): Promise<Response>
   }
 };
 
-const getDefaultProductImage = (url: string): string | null => {
+const getDefaultProductImage = (url: string): string => {
   try {
     const parsedUrl = new URL(url);
     const domain = parsedUrl.hostname.toLowerCase();
 
-    // Amazon product image fallback
-    if (domain.includes('amazon.com')) {
-      const match = url.match(/\/dp\/([A-Z0-9]+)/);
-      if (match && match[1]) {
-        return `https://images-na.ssl-images-amazon.com/images/P/${match[1]}.01.L.jpg`;
+    // Amazon product image patterns
+    if (domain.includes('amazon.')) {
+      // Pattern 1: /dp/ or /gp/product/
+      const dpMatch = url.match(/\/(?:dp|gp\/product)\/([A-Z0-9]{10})/i);
+      const productId = dpMatch?.[1];
+      if (productId) {
+        return `https://images-na.ssl-images-amazon.com/images/P/${productId}.jpg`;
+      }
+      
+      // Pattern 2: /images/I/
+      const imgMatch = url.match(/\/images\/I\/([A-Za-z0-9%-._]+\.(?:jpg|jpeg|png|gif))/i);
+      const imageId = imgMatch?.[1];
+      if (imageId) {
+        return `https://images-na.ssl-images-amazon.com/images/I/${imageId}`;
       }
     }
 
-    // Add more e-commerce sites as needed
-    // Example: Walmart
-    if (domain.includes('walmart.com')) {
-      const match = url.match(/\/ip\/([^\/]+)/);
-      if (match && match[1]) {
-        return `https://i5.walmartimages.com/asr/${match[1]}.jpg`;
+    // Walmart patterns
+    if (domain.includes('walmart.')) {
+      // Pattern 1: /ip/ path
+      const ipMatch = url.match(/\/ip\/([^\/]+)/);
+      const ipId = ipMatch?.[1];
+      if (ipId) {
+        return `https://i5.walmartimages.com/asr/${ipId}.jpg`;
+      }
+      
+      // Pattern 2: direct image URL
+      const imgMatch = url.match(/\/([a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12})/i);
+      const imgId = imgMatch?.[1];
+      if (imgId) {
+        return `https://i5.walmartimages.com/asr/${imgId}.jpg`;
       }
     }
 
-    return null;
-  } catch {
-    return null;
+    // Target patterns
+    if (domain.includes('target.')) {
+      const dpMatch = url.match(/\/A-(\d+)/);
+      const productId = dpMatch?.[1];
+      if (productId) {
+        return `https://target.scene7.com/is/image/Target/${productId}`;
+      }
+    }
+
+    // Best Buy patterns
+    if (domain.includes('bestbuy.')) {
+      const skuMatch = url.match(/\/(\d{7}\.p)/);
+      const skuId = skuMatch?.[1];
+      if (skuId) {
+        return `https://pisces.bbystatic.com/image2/BestBuy_US/images/products/${skuId.slice(0, 4)}/${skuId.replace('.p', '_sd.jpg')}`;
+      }
+    }
+
+    // Etsy patterns
+    if (domain.includes('etsy.')) {
+      const listingMatch = url.match(/\/listing\/(\d+)\//);
+      const listingId = listingMatch?.[1];
+      if (listingId) {
+        return `https://i.etsystatic.com/isla/[...]/${listingId}_1.jpg`;
+      }
+    }
+
+    // If no product image pattern matches, try to get a high-quality favicon
+    return getFaviconUrl(parsedUrl.hostname);
+  } catch (error) {
+    console.error('Error extracting product image:', error);
+    return getFaviconUrl(new URL(url).hostname);
   }
 };
 
 const getFaviconUrl = (hostname: string): string => {
-  // Try Google's favicon service first as it provides high-quality favicons
   return `https://www.google.com/s2/favicons?domain=${hostname}&sz=128`;
 };
 
@@ -179,17 +222,20 @@ export const giftsService = {
         const validUrl = new URL(gift.url);
         gift.url = validUrl.toString();
 
-        // First try to get a product image based on the URL pattern
-        image_url = getDefaultProductImage(gift.url);
+        // Try to get the product image first
+        try {
+          image_url = getDefaultProductImage(gift.url);
+        } catch (error) {
+          console.error("Error getting product image:", error);
+        }
 
-        // If no product image is found, use the favicon
+        // If no product image was found or there was an error, use the favicon
         if (!image_url) {
           image_url = getFaviconUrl(validUrl.hostname);
         }
 
       } catch (error) {
         console.error("Error processing URL:", error);
-        // If URL processing fails, don't set an image
       }
     }
 
