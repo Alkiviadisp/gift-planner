@@ -27,6 +27,75 @@ export interface GiftRecord {
   updated_at: string
 }
 
+const MAX_RETRIES = 3;
+const RETRY_DELAY = 1000; // 1 second
+const TIMEOUT = 10000; // 10 seconds
+
+const wait = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
+
+const fetchWithTimeout = async (url: string, timeout: number): Promise<Response> => {
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), timeout);
+
+  try {
+    const response = await fetch(url, {
+      signal: controller.signal,
+      mode: 'no-cors', // Add no-cors mode to handle CORS restrictions
+      credentials: 'omit',
+      headers: {
+        'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8',
+        'Accept-Language': 'en-US,en;q=0.5',
+      }
+    });
+    clearTimeout(timeoutId);
+    return response;
+  } catch (error) {
+    clearTimeout(timeoutId);
+    throw error;
+  }
+};
+
+const getDefaultProductImage = (url: string): string | null => {
+  try {
+    const parsedUrl = new URL(url);
+    const domain = parsedUrl.hostname.toLowerCase();
+
+    // Amazon product image fallback
+    if (domain.includes('amazon.com')) {
+      const match = url.match(/\/dp\/([A-Z0-9]+)/);
+      if (match && match[1]) {
+        return `https://images-na.ssl-images-amazon.com/images/P/${match[1]}.01.L.jpg`;
+      }
+    }
+
+    // Add more e-commerce sites as needed
+    // Example: Walmart
+    if (domain.includes('walmart.com')) {
+      const match = url.match(/\/ip\/([^\/]+)/);
+      if (match && match[1]) {
+        return `https://i5.walmartimages.com/asr/${match[1]}.jpg`;
+      }
+    }
+
+    return null;
+  } catch {
+    return null;
+  }
+};
+
+const fetchWithRetry = async (url: string, retries = MAX_RETRIES): Promise<Response> => {
+  try {
+    const response = await fetchWithTimeout(url, TIMEOUT);
+    return response;
+  } catch (error: any) {
+    if (retries > 0 && error.name !== 'AbortError') {
+      await wait(RETRY_DELAY * (MAX_RETRIES - retries + 1));
+      return fetchWithRetry(url, retries - 1);
+    }
+    throw error;
+  }
+};
+
 export const giftsService = {
   async getGifts(userId: string, categoryId: string): Promise<Gift[]> {
     const { data, error } = await supabase
@@ -97,62 +166,71 @@ export const giftsService = {
       url?: string
     }
   ): Promise<Gift> {
-    // If URL is provided, try to fetch metadata
-    let image_url: string | null = null
+    let image_url: string | null = null;
+
     if (gift.url) {
       try {
-        const response = await fetch(gift.url)
-        const html = await response.text()
-        
-        // Try to find OpenGraph image
-        const ogImage = html.match(/<meta property="og:image" content="(.*?)"/)
-        if (ogImage && ogImage[1]) {
-          image_url = ogImage[1]
-        }
-        // Fallback to any image in the page
-        else {
-          const firstImage = html.match(/<img.*?src="(.*?)"/)
-          if (firstImage && firstImage[1]) {
-            image_url = firstImage[1]
+        // Validate URL format first
+        const validUrl = new URL(gift.url);
+        gift.url = validUrl.toString(); // Normalize the URL
+
+        // Try to get a default product image based on the URL pattern
+        image_url = getDefaultProductImage(gift.url);
+
+        // If we couldn't get a default product image, try to get the favicon
+        if (!image_url) {
+          try {
+            const faviconUrl = `https://www.google.com/s2/favicons?domain=${validUrl.hostname}&sz=128`;
+            const faviconResponse = await fetchWithRetry(faviconUrl);
+            if (faviconResponse.ok) {
+              image_url = faviconUrl;
+            }
+          } catch (error) {
+            console.error("Error fetching favicon:", error);
           }
         }
       } catch (error) {
-        console.error("Error fetching URL metadata:", error)
+        console.error("Error processing URL:", error);
       }
     }
 
-    const { data, error } = await supabase
-      .from("gifts")
-      .insert([
-        {
-          user_id: userId,
-          category_id: categoryId,
-          recipient: gift.recipient,
-          recipient_email: gift.recipientEmail || null,
-          name: gift.name,
-          price: gift.price || null,
-          url: gift.url || null,
-          image_url,
-          is_purchased: false,
-        },
-      ])
-      .select()
-      .single()
+    try {
+      const { data, error } = await supabase
+        .from("gifts")
+        .insert([
+          {
+            user_id: userId,
+            category_id: categoryId,
+            recipient: gift.recipient,
+            recipient_email: gift.recipientEmail || null,
+            name: gift.name,
+            price: gift.price || null,
+            url: gift.url || null,
+            image_url,
+            is_purchased: false,
+          },
+        ])
+        .select()
+        .single();
 
-    if (error) {
-      console.error("Database error in createGift:", error)
-      throw error
-    }
+      if (error) {
+        console.error("Database error in createGift:", error);
+        throw error;
+      }
 
-    return {
-      id: data.id,
-      recipient: data.recipient,
-      recipientEmail: data.recipient_email,
-      name: data.name,
-      price: data.price,
-      url: data.url,
-      image_url: data.image_url,
-      isPurchased: data.is_purchased,
+      return {
+        id: data.id,
+        recipient: data.recipient,
+        recipientEmail: data.recipient_email,
+        name: data.name,
+        price: data.price,
+        url: data.url,
+        image_url: data.image_url,
+        isPurchased: data.is_purchased,
+      };
+    } catch (error) {
+      console.error("Error in createGift:", error);
+      throw error;
     }
   },
 

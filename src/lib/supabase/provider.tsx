@@ -22,6 +22,9 @@ const SupabaseContext = createContext<SupabaseContextType>({
   isLoading: true
 })
 
+const INACTIVITY_TIMEOUT = 10 * 60 * 1000 // 10 minutes in milliseconds
+const CONNECTION_CHECK_INTERVAL = 30 * 1000 // Check connection every 30 seconds
+
 export function SupabaseProvider({
   children,
 }: {
@@ -30,7 +33,68 @@ export function SupabaseProvider({
   const [user, setUser] = useState<User | null>(null)
   const [profile, setProfile] = useState<Profile | null>(null)
   const [isLoading, setIsLoading] = useState(true)
+  const [lastActivity, setLastActivity] = useState(Date.now())
+  const [connectionErrors, setConnectionErrors] = useState(0)
   const router = useRouter()
+
+  // Update last activity timestamp on user interaction
+  useEffect(() => {
+    const updateActivity = () => {
+      setLastActivity(Date.now())
+      setConnectionErrors(0) // Reset connection errors on user activity
+    }
+
+    // Add event listeners for user activity
+    window.addEventListener('mousemove', updateActivity)
+    window.addEventListener('keydown', updateActivity)
+    window.addEventListener('click', updateActivity)
+    window.addEventListener('touchstart', updateActivity)
+    window.addEventListener('scroll', updateActivity)
+
+    return () => {
+      window.removeEventListener('mousemove', updateActivity)
+      window.removeEventListener('keydown', updateActivity)
+      window.removeEventListener('click', updateActivity)
+      window.removeEventListener('touchstart', updateActivity)
+      window.removeEventListener('scroll', updateActivity)
+    }
+  }, [])
+
+  // Check database connection periodically
+  useEffect(() => {
+    const checkConnection = async () => {
+      if (!user) return // Don't check if user is not logged in
+
+      try {
+        // Try a simple query to check connection
+        const { error } = await supabase
+          .from('profiles')
+          .select('count')
+          .limit(1)
+          .single()
+
+        if (error) {
+          console.error('Database connection error:', error)
+          setConnectionErrors(prev => prev + 1)
+          
+          // If inactive for more than 10 minutes OR 3 consecutive connection errors
+          const isInactive = Date.now() - lastActivity > INACTIVITY_TIMEOUT
+          if (isInactive || connectionErrors >= 2) {
+            console.log('Auto logout due to:', isInactive ? 'inactivity' : 'connection errors')
+            await signOut()
+          }
+        } else {
+          setConnectionErrors(0) // Reset on successful connection
+        }
+      } catch (error) {
+        console.error('Connection check failed:', error)
+        setConnectionErrors(prev => prev + 1)
+      }
+    }
+
+    const intervalId = setInterval(checkConnection, CONNECTION_CHECK_INTERVAL)
+    return () => clearInterval(intervalId)
+  }, [user, lastActivity, connectionErrors])
 
   const refreshProfile = useCallback(async (userId: string) => {
     try {
@@ -187,6 +251,7 @@ export function SupabaseProvider({
       // Clear local state
       setUser(null)
       setProfile(null)
+      setConnectionErrors(0)
       
       // Navigate after state is cleared
       console.log('Navigating to home page...')
@@ -205,6 +270,7 @@ export function SupabaseProvider({
       // Force sign out on error
       setUser(null)
       setProfile(null)
+      setConnectionErrors(0)
       router.push("/")
       router.refresh()
     }
