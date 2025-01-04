@@ -37,9 +37,10 @@ import { useSupabase } from "@/lib/supabase/provider"
 
 interface GiftListProps {
   categoryId: string
+  onGiftChange?: () => void
 }
 
-export function GiftList({ categoryId }: GiftListProps) {
+export function GiftList({ categoryId, onGiftChange }: GiftListProps) {
   const [gifts, setGifts] = useState<Gift[]>([])
   const [isLoading, setIsLoading] = useState(true)
   const [giftToDelete, setGiftToDelete] = useState<string | null>(null)
@@ -64,6 +65,7 @@ export function GiftList({ categoryId }: GiftListProps) {
     try {
       const data = await giftsService.getGifts(user!.id, categoryId)
       setGifts(data)
+      onGiftChange?.()
     } catch (error) {
       console.error("Error loading gifts:", error)
       toast({
@@ -118,6 +120,7 @@ export function GiftList({ categoryId }: GiftListProps) {
       setGifts((prev) => [...prev, gift])
       setNewGift({ recipient: "", recipientEmail: "", name: "", price: "", url: "" })
       setShowAddGiftDialog(false)
+      onGiftChange?.()
       toast({
         title: "Success",
         description: "Gift added successfully!",
@@ -158,6 +161,7 @@ export function GiftList({ categoryId }: GiftListProps) {
     try {
       await giftsService.deleteGift(user!.id, giftId)
       setGifts((prev) => prev.filter((gift) => gift.id !== giftId))
+      onGiftChange?.()
       toast({
         title: "Success",
         description: "Gift deleted successfully!",

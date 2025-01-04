@@ -1,9 +1,9 @@
 "use client"
 
-import { useState } from "react"
+import { useState, useEffect, useCallback } from "react"
 import { Card, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
-import { Trash2 } from "lucide-react"
+import { Trash2, Gift } from "lucide-react"
 import {
   AlertDialog,
   AlertDialogAction,
@@ -22,6 +22,8 @@ import {
 } from "@/components/ui/dialog"
 import { differenceInDays } from "date-fns"
 import { GiftList } from "@/components/gifts/gift-list"
+import { giftsService } from "@/lib/gifts/gifts-service"
+import { useSupabase } from "@/lib/supabase/provider"
 
 interface Category {
   id: string
@@ -38,12 +40,33 @@ interface CategoryCardProps {
 export function CategoryCard({ category, onDelete }: CategoryCardProps) {
   const [showDeleteDialog, setShowDeleteDialog] = useState(false)
   const [showGiftDialog, setShowGiftDialog] = useState(false)
+  const [giftCount, setGiftCount] = useState<number | null>(null)
+  const { user } = useSupabase()
   const daysUntil = differenceInDays(category.date, new Date())
   const daysText = daysUntil === 0 
     ? "Today!" 
     : daysUntil === 1 
     ? "Tomorrow" 
     : `${daysUntil} days left`
+
+  const loadGiftCount = useCallback(async () => {
+    if (user) {
+      try {
+        const count = await giftsService.getGiftCount(user.id, category.id);
+        setGiftCount(count);
+      } catch (error) {
+        console.error("Error loading gift count:", error);
+      }
+    }
+  }, [category.id, user]);
+
+  useEffect(() => {
+    loadGiftCount();
+  }, [loadGiftCount]);
+
+  const handleGiftChange = useCallback(() => {
+    loadGiftCount();
+  }, [loadGiftCount]);
 
   return (
     <>
@@ -56,9 +79,19 @@ export function CategoryCard({ category, onDelete }: CategoryCardProps) {
           <div className="flex items-start justify-between">
             <div className="flex-1">
               <CardTitle className="text-xl text-gray-800">{category.title}</CardTitle>
-              <p className="text-sm text-gray-600 mt-2">
-                {daysUntil < 0 ? "Past event" : daysText}
-              </p>
+              <div className="space-y-1 mt-2">
+                <p className="text-sm text-gray-600">
+                  {daysUntil < 0 ? "Past event" : daysText}
+                </p>
+                {giftCount !== null && (
+                  <p className="text-sm text-gray-600 flex items-center gap-1">
+                    <Gift className="h-3 w-3" />
+                    {giftCount === 0 ? "No gifts yet" : 
+                     giftCount === 1 ? "1 gift" : 
+                     `${giftCount} gifts`}
+                  </p>
+                )}
+              </div>
             </div>
             <Button
               variant="ghost"
@@ -80,7 +113,10 @@ export function CategoryCard({ category, onDelete }: CategoryCardProps) {
           <DialogHeader>
             <DialogTitle>{category.title} - Gifts</DialogTitle>
           </DialogHeader>
-          <GiftList categoryId={category.id} />
+          <GiftList 
+            categoryId={category.id} 
+            onGiftChange={handleGiftChange}
+          />
         </DialogContent>
       </Dialog>
 

@@ -83,6 +83,11 @@ const getDefaultProductImage = (url: string): string | null => {
   }
 };
 
+const getFaviconUrl = (hostname: string): string => {
+  // Try Google's favicon service first as it provides high-quality favicons
+  return `https://www.google.com/s2/favicons?domain=${hostname}&sz=128`;
+};
+
 const fetchWithRetry = async (url: string, retries = MAX_RETRIES): Promise<Response> => {
   try {
     const response = await fetchWithTimeout(url, TIMEOUT);
@@ -170,27 +175,21 @@ export const giftsService = {
 
     if (gift.url) {
       try {
-        // Validate URL format first
+        // Validate and normalize URL
         const validUrl = new URL(gift.url);
-        gift.url = validUrl.toString(); // Normalize the URL
+        gift.url = validUrl.toString();
 
-        // Try to get a default product image based on the URL pattern
+        // First try to get a product image based on the URL pattern
         image_url = getDefaultProductImage(gift.url);
 
-        // If we couldn't get a default product image, try to get the favicon
+        // If no product image is found, use the favicon
         if (!image_url) {
-          try {
-            const faviconUrl = `https://www.google.com/s2/favicons?domain=${validUrl.hostname}&sz=128`;
-            const faviconResponse = await fetchWithRetry(faviconUrl);
-            if (faviconResponse.ok) {
-              image_url = faviconUrl;
-            }
-          } catch (error) {
-            console.error("Error fetching favicon:", error);
-          }
+          image_url = getFaviconUrl(validUrl.hostname);
         }
+
       } catch (error) {
         console.error("Error processing URL:", error);
+        // If URL processing fails, don't set an image
       }
     }
 
@@ -280,5 +279,20 @@ export const giftsService = {
       console.error("Database error in deleteGift:", error)
       throw error
     }
+  },
+
+  async getGiftCount(userId: string, categoryId: string): Promise<number> {
+    const { count, error } = await supabase
+      .from("gifts")
+      .select("*", { count: 'exact', head: true })
+      .eq("user_id", userId)
+      .eq("category_id", categoryId);
+
+    if (error) {
+      console.error("Database error in getGiftCount:", error);
+      throw error;
+    }
+
+    return count || 0;
   },
 } 

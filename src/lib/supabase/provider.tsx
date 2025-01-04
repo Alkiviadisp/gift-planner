@@ -239,6 +239,8 @@ export function SupabaseProvider({
   const signOut = async () => {
     try {
       console.log('Starting sign out process...')
+      
+      // First, sign out from Supabase
       const { error } = await supabase.auth.signOut()
       
       if (error) {
@@ -255,8 +257,14 @@ export function SupabaseProvider({
       
       // Navigate after state is cleared
       console.log('Navigating to home page...')
-      router.push("/")
-      router.refresh() // Force a refresh to ensure clean state
+      
+      // Use replace instead of push to prevent back navigation to authenticated pages
+      await router.replace("/")
+      
+      // Add a small delay before refresh to ensure state is cleared
+      setTimeout(() => {
+        router.refresh()
+      }, 100)
       
     } catch (error: any) {
       console.error('Error signing out:', {
@@ -271,7 +279,7 @@ export function SupabaseProvider({
       setUser(null)
       setProfile(null)
       setConnectionErrors(0)
-      router.push("/")
+      await router.replace("/")
       router.refresh()
     }
   }
