@@ -1,15 +1,13 @@
 export interface Profile {
   id: string
-  email: string
-  full_name: string | null
   nickname: string | null
   avatar_url: string | null
   updated_at: string | null
+  google_calendar_enabled: boolean
   google_calendar_refresh_token: string | null
-  google_calendar_access_token: string | null
-  google_calendar_token_expiry: string | null
-  apple_calendar_sync_enabled: boolean
-  calendar_preferences: CalendarPreferences
+  apple_calendar_enabled: boolean
+  notifications_enabled: boolean
+  reminder_time: number | null
 }
 
 export interface CalendarPreferences {

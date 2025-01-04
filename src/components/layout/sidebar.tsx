@@ -8,34 +8,39 @@ import { Button } from "@/components/ui/button"
 import {
   Calendar,
   Gift,
-  Settings,
   Users,
   LogOut,
+  Settings,
 } from "lucide-react"
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
 import { AuthDialog } from "@/components/auth/auth-dialog"
 import { useSupabase } from "@/lib/supabase/provider"
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu"
 
 const navItems = [
   {
+    id: "categories",
     title: "Gift Categories",
     href: "/categories",
     icon: Gift,
   },
   {
+    id: "groups",
     title: "Group Gifts",
     href: "/groups",
     icon: Users,
   },
   {
+    id: "calendar",
     title: "Calendar",
     href: "/calendar",
     icon: Calendar,
-  },
-  {
-    title: "Settings",
-    href: "/settings",
-    icon: Settings,
   },
 ]
 
@@ -54,7 +59,7 @@ export function Sidebar() {
       <div className="flex-1 space-y-1 py-4">
         {navItems.map((item) => (
           <Button
-            key={item.href}
+            key={item.id}
             variant={pathname === item.href ? "secondary" : "ghost"}
             className={cn(
               "w-full justify-start gap-2",
@@ -64,39 +69,47 @@ export function Sidebar() {
           >
             <Link href={item.href}>
               <item.icon className="h-4 w-4" />
-              {item.title}
+              <span>{item.title}</span>
             </Link>
           </Button>
         ))}
       </div>
       <div className="border-t p-4">
         {user ? (
-          <div className="flex items-center justify-between">
-            <div className="flex items-center gap-2">
-              <Avatar>
-                <AvatarImage src={profile?.avatar_url || undefined} />
-                <AvatarFallback>
-                  {profile?.full_name?.[0]?.toUpperCase() || user.email?.[0]?.toUpperCase()}
-                </AvatarFallback>
-              </Avatar>
-              <div className="flex flex-col">
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <Button
+                variant="ghost"
+                className="w-full justify-start gap-2 px-2"
+              >
+                <Avatar className="h-8 w-8">
+                  <AvatarImage src={profile?.avatar_url || undefined} />
+                  <AvatarFallback>
+                    {profile?.nickname?.[0]?.toUpperCase()}
+                  </AvatarFallback>
+                </Avatar>
                 <span className="text-sm font-medium">
-                  {profile?.full_name || "User"}
+                  {profile?.nickname || "User"}
                 </span>
-                <span className="text-xs text-muted-foreground">
-                  {user.email}
-                </span>
-              </div>
-            </div>
-            <Button
-              variant="ghost"
-              size="icon"
-              onClick={() => signOut()}
-              className="ml-auto"
-            >
-              <LogOut className="h-4 w-4" />
-            </Button>
-          </div>
+              </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end" className="w-[200px]">
+              <DropdownMenuItem asChild>
+                <Link href="/account" className="flex items-center">
+                  <Settings className="mr-2 h-4 w-4" />
+                  Account Settings
+                </Link>
+              </DropdownMenuItem>
+              <DropdownMenuSeparator />
+              <DropdownMenuItem
+                onClick={() => signOut()}
+                className="text-red-600 focus:text-red-600"
+              >
+                <LogOut className="mr-2 h-4 w-4" />
+                Sign Out
+              </DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
         ) : (
           <Button
             className="w-full justify-start gap-2"

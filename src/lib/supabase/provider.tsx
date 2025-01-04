@@ -1,6 +1,6 @@
 "use client"
 
-import { createContext, useContext, useEffect, useState } from "react"
+import { createContext, useContext, useEffect, useState, useCallback } from "react"
 import { User } from "@supabase/supabase-js"
 import { supabase } from "./client"
 import { Profile } from "@/types/database"
@@ -9,12 +9,14 @@ interface SupabaseContextType {
   user: User | null
   profile: Profile | null
   signOut: () => Promise<void>
+  refreshProfile: () => Promise<void>
 }
 
 const SupabaseContext = createContext<SupabaseContextType>({
   user: null,
   profile: null,
   signOut: async () => {},
+  refreshProfile: async () => {},
 })
 
 export function SupabaseProvider({
@@ -25,59 +27,54 @@ export function SupabaseProvider({
   const [user, setUser] = useState<User | null>(null)
   const [profile, setProfile] = useState<Profile | null>(null)
 
+  const refreshProfile = useCallback(async () => {
+    if (!user) return
+
+    const { data, error } = await supabase
+      .from("profiles")
+      .select("*")
+      .eq("id", user.id)
+      .single()
+
+    if (!error && data) {
+      setProfile(data)
+    }
+  }, [user])
+
   useEffect(() => {
-    // Get initial session
+    // Get initial user
     supabase.auth.getSession().then(({ data: { session } }) => {
-      setUser(session?.user ?? null)
       if (session?.user) {
-        fetchProfile(session.user.id)
+        setUser(session.user)
       }
     })
 
-    // Listen for auth changes
+    // Listen for changes
     const {
       data: { subscription },
     } = supabase.auth.onAuthStateChange((_event, session) => {
       setUser(session?.user ?? null)
-      if (session?.user) {
-        fetchProfile(session.user.id)
-      } else {
-        setProfile(null)
-      }
     })
 
-    return () => {
-      subscription.unsubscribe()
-    }
+    return () => subscription.unsubscribe()
   }, [])
 
-  async function fetchProfile(userId: string) {
-    try {
-      const { data, error } = await supabase
-        .from("profiles")
-        .select("*")
-        .eq("id", userId)
-        .single()
-
-      if (error) throw error
-      setProfile(data)
-    } catch (error) {
-      console.error("Error loading profile:", error)
+  useEffect(() => {
+    if (user) {
+      refreshProfile()
+    } else {
+      setProfile(null)
     }
-  }
+  }, [user, refreshProfile])
 
-  async function signOut() {
+  const signOut = async () => {
     await supabase.auth.signOut()
-  }
-
-  const value = {
-    user,
-    profile,
-    signOut,
+    setUser(null)
+    setProfile(null)
   }
 
   return (
-    <SupabaseContext.Provider value={value}>
+    <SupabaseContext.Provider value={{ user, profile, signOut, refreshProfile }}>
       {children}
     </SupabaseContext.Provider>
   )
