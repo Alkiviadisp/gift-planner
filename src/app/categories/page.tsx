@@ -15,7 +15,7 @@ export default function CategoriesPage() {
   const [showCreateDialog, setShowCreateDialog] = useState(false)
   const [isLoading, setIsLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
-  const { user, isLoading: isAuthLoading } = useSupabase()
+  const { user, isLoading: isAuthLoading, profile } = useSupabase()
   const { toast } = useToast()
   const [hasLoadedInitially, setHasLoadedInitially] = useState(false)
 
@@ -25,20 +25,27 @@ export default function CategoriesPage() {
       // 1. We haven't loaded them yet
       // 2. Auth check is complete
       // 3. User is logged in
-      if (!hasLoadedInitially && !isAuthLoading && user) {
+      // 4. Profile is loaded
+      if (!hasLoadedInitially && !isAuthLoading && user && profile) {
         await loadCategories()
         setHasLoadedInitially(true)
       }
     }
     
     loadCategoriesIfNeeded()
-  }, [user, isAuthLoading, hasLoadedInitially])
+  }, [user, isAuthLoading, hasLoadedInitially, profile])
 
   const loadCategories = async () => {
     if (!user?.id) {
       console.log('No user ID available, skipping category load')
       return
     }
+
+    console.log('Starting to load categories for user:', {
+      userId: user.id,
+      hasProfile: !!profile,
+      isAuthLoading
+    })
 
     setIsLoading(true)
     setError(null)

@@ -209,8 +209,9 @@ declare
 begin
   -- Get nickname from metadata or email
   nickname_val := coalesce(
-    new.raw_user_meta_data->>'full_name',
-    split_part(new.email, '@', 1)
+    new.raw_user_meta_data->>'nickname',  -- First try to get nickname from metadata
+    new.raw_user_meta_data->>'full_name', -- Then try full_name
+    split_part(new.email, '@', 1)         -- Finally fallback to email
   );
 
   -- Insert profile with all required fields
