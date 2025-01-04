@@ -1,6 +1,7 @@
 "use client"
 
 import { useState } from "react"
+import { useRouter } from "next/navigation"
 import { Dialog, DialogContent, DialogTitle } from "@/components/ui/dialog"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { Button } from "@/components/ui/button"
@@ -16,7 +17,27 @@ interface AuthDialogProps {
 
 export function AuthDialog({ open, onOpenChange }: AuthDialogProps) {
   const [isLoading, setIsLoading] = useState(false)
+  const [errors, setErrors] = useState({
+    password: "",
+  })
   const { toast } = useToast()
+  const router = useRouter()
+
+  const validatePassword = (password: string) => {
+    if (password.length < 8) {
+      return "Password must be at least 8 characters long"
+    }
+    if (!/[A-Z]/.test(password)) {
+      return "Password must contain at least one uppercase letter"
+    }
+    if (!/[a-z]/.test(password)) {
+      return "Password must contain at least one lowercase letter"
+    }
+    if (!/[0-9]/.test(password)) {
+      return "Password must contain at least one number"
+    }
+    return ""
+  }
 
   const handleSubmit = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault()
@@ -29,6 +50,13 @@ export function AuthDialog({ open, onOpenChange }: AuthDialogProps) {
       const isSignUp = e.currentTarget.dataset.action === "sign-up"
 
       if (isSignUp) {
+        // Validate password for sign up
+        const passwordError = validatePassword(password)
+        if (passwordError) {
+          setErrors({ password: passwordError })
+          return
+        }
+
         const nickname = formData.get("nickname") as string
         const { error } = await supabase.auth.signUp({
           email,
@@ -47,14 +75,20 @@ export function AuthDialog({ open, onOpenChange }: AuthDialogProps) {
           description: "We sent you a verification link to complete your registration.",
         })
       } else {
-        const { error } = await supabase.auth.signInWithPassword({
+        const { error, data } = await supabase.auth.signInWithPassword({
           email,
           password,
         })
 
         if (error) throw error
 
+        toast({
+          title: "Welcome back!",
+          description: "You have successfully signed in.",
+        })
+
         onOpenChange(false)
+        router.push("/categories")
       }
     } catch (error) {
       console.error('Authentication error:', error)
@@ -68,6 +102,18 @@ export function AuthDialog({ open, onOpenChange }: AuthDialogProps) {
     }
   }
 
+  const handlePasswordChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const password = e.target.value
+    const isSignUp = e.target.form?.dataset.action === "sign-up"
+    
+    if (isSignUp) {
+      const error = validatePassword(password)
+      setErrors({ password: error })
+    } else {
+      setErrors({ password: "" })
+    }
+  }
+
   const signInWithProvider = async (provider: 'google' | 'apple') => {
     try {
       const { error } = await supabase.auth.signInWithOAuth({
@@ -78,6 +124,10 @@ export function AuthDialog({ open, onOpenChange }: AuthDialogProps) {
       })
 
       if (error) throw error
+
+      // The OAuth flow will handle the redirect automatically
+      // After successful auth, the user will be redirected to /auth/callback
+      // which should then redirect to /categories
     } catch (error) {
       console.error('OAuth error:', error)
       toast({
@@ -158,9 +208,27 @@ export function AuthDialog({ open, onOpenChange }: AuthDialogProps) {
                   type="password"
                   required
                   disabled={isLoading}
+                  onChange={handlePasswordChange}
                 />
+                {errors.password && (
+                  <p className="text-sm text-destructive">{errors.password}</p>
+                )}
+                <div className="space-y-2">
+                  <p className="text-sm text-muted-foreground">
+                    Password must be at least 8 characters long and contain:
+                  </p>
+                  <ul className="text-sm text-muted-foreground list-disc pl-4">
+                    <li>One uppercase letter</li>
+                    <li>One lowercase letter</li>
+                    <li>One number</li>
+                  </ul>
+                </div>
               </div>
-              <Button type="submit" className="w-full" disabled={isLoading}>
+              <Button 
+                type="submit" 
+                className="w-full" 
+                disabled={isLoading || (errors.password !== "")}
+              >
                 {isLoading ? "Creating account..." : "Create Account"}
               </Button>
             </form>
