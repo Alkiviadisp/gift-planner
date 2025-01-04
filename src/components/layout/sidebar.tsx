@@ -11,6 +11,7 @@ import {
   Users,
   LogOut,
   Settings,
+  Home,
 } from "lucide-react"
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
 import { AuthDialog } from "@/components/auth/auth-dialog"
@@ -111,12 +112,20 @@ export function Sidebar() {
             </DropdownMenuContent>
           </DropdownMenu>
         ) : (
-          <Button
-            className="w-full justify-start gap-2"
-            onClick={() => setShowAuthDialog(true)}
-          >
-            Sign In
-          </Button>
+          <div className="flex items-center gap-2">
+            <Avatar className="h-8 w-8 border border-muted">
+              <AvatarFallback>
+                <Home className="h-4 w-4 text-muted-foreground" />
+              </AvatarFallback>
+            </Avatar>
+            <Button 
+              variant="outline" 
+              className="w-full border-black text-black hover:bg-black/5 rounded-full font-medium"
+              onClick={() => setShowAuthDialog(true)}
+            >
+              Sign In
+            </Button>
+          </div>
         )}
       </div>
       <AuthDialog open={showAuthDialog} onOpenChange={setShowAuthDialog} />

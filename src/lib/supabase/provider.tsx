@@ -217,6 +217,44 @@ export function SupabaseProvider({
     }
   }, [user?.id, refreshProfile])
 
+  // Add session refresh interval
+  useEffect(() => {
+    const refreshSession = async () => {
+      try {
+        const { data: { session }, error } = await supabase.auth.getSession()
+        if (error) {
+          console.error('Error refreshing session:', error)
+          // If there's a session error, clear the state and redirect to home
+          setUser(null)
+          setProfile(null)
+          router.push('/')
+          return
+        }
+
+        if (!session) {
+          setUser(null)
+          setProfile(null)
+          return
+        }
+
+        setUser(session.user)
+        if (session.user) {
+          await refreshProfile(session.user.id)
+        }
+      } catch (error) {
+        console.error('Session refresh error:', error)
+      }
+    }
+
+    // Refresh session every 5 minutes
+    const intervalId = setInterval(refreshSession, 5 * 60 * 1000)
+    
+    // Initial session check
+    refreshSession()
+
+    return () => clearInterval(intervalId)
+  }, [router])
+
   return (
     <SupabaseContext.Provider value={{ 
       user, 

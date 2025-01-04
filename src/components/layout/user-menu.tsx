@@ -1,8 +1,9 @@
 import { useState } from "react"
-import { User, Home } from "lucide-react"
+import { User, Home, Settings, LogOut } from "lucide-react"
 import { useSupabase } from "@/lib/supabase/provider"
 import { Button } from "@/components/ui/button"
 import { AuthDialog } from "@/components/auth/auth-dialog"
+import Link from "next/link"
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -47,7 +48,7 @@ export function UserMenu() {
       <DropdownMenuTrigger asChild>
         <Button 
           variant="ghost" 
-          className="relative h-8 w-8 rounded-full"
+          className="flex items-center gap-2 px-2"
         >
           <Avatar className="h-8 w-8">
             <AvatarImage 
@@ -58,6 +59,9 @@ export function UserMenu() {
               {profile?.nickname?.[0]?.toUpperCase() || user.email?.[0]?.toUpperCase() || <User className="h-4 w-4" />}
             </AvatarFallback>
           </Avatar>
+          <span className="text-sm font-medium hidden sm:inline-block">
+            {profile?.nickname || user.email?.split('@')[0] || 'User'}
+          </span>
         </Button>
       </DropdownMenuTrigger>
       <DropdownMenuContent 
@@ -76,10 +80,17 @@ export function UserMenu() {
           </div>
         </DropdownMenuLabel>
         <DropdownMenuSeparator />
+        <DropdownMenuItem asChild>
+          <Link href="/account" className="flex items-center cursor-pointer">
+            <Settings className="mr-2 h-4 w-4" />
+            Account Settings
+          </Link>
+        </DropdownMenuItem>
         <DropdownMenuItem
-          className="cursor-pointer"
+          className="cursor-pointer text-red-600 focus:text-red-600"
           onClick={() => signOut()}
         >
+          <LogOut className="mr-2 h-4 w-4" />
           Sign out
         </DropdownMenuItem>
       </DropdownMenuContent>
