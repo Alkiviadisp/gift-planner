@@ -18,12 +18,28 @@ interface AuthDialogProps {
 export function AuthDialog({ open, onOpenChange }: AuthDialogProps) {
   const [isLoading, setIsLoading] = useState(false)
   const [errors, setErrors] = useState({
+    email: "",
     password: "",
+    general: "",
   })
   const { toast } = useToast()
   const router = useRouter()
 
+  const validateEmail = (email: string) => {
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
+    if (!email) {
+      return "Email is required"
+    }
+    if (!emailRegex.test(email)) {
+      return "Please enter a valid email address"
+    }
+    return ""
+  }
+
   const validatePassword = (password: string) => {
+    if (!password) {
+      return "Password is required"
+    }
     if (password.length < 8) {
       return "Password must be at least 8 characters long"
     }
@@ -42,6 +58,7 @@ export function AuthDialog({ open, onOpenChange }: AuthDialogProps) {
   const handleSubmit = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault()
     setIsLoading(true)
+    setErrors({ email: "", password: "", general: "" })
 
     try {
       const formData = new FormData(e.currentTarget)
@@ -49,15 +66,26 @@ export function AuthDialog({ open, onOpenChange }: AuthDialogProps) {
       const password = formData.get("password") as string
       const isSignUp = e.currentTarget.dataset.action === "sign-up"
 
+      // Validate email and password
+      const emailError = validateEmail(email)
+      const passwordError = validatePassword(password)
+
+      if (emailError || passwordError) {
+        setErrors({
+          email: emailError,
+          password: passwordError,
+          general: "",
+        })
+        return
+      }
+
       if (isSignUp) {
-        // Validate password for sign up
-        const passwordError = validatePassword(password)
-        if (passwordError) {
-          setErrors({ password: passwordError })
+        const nickname = formData.get("nickname") as string
+        if (!nickname?.trim()) {
+          setErrors(prev => ({ ...prev, general: "Nickname is required" }))
           return
         }
 
-        const nickname = formData.get("nickname") as string
         const { error } = await supabase.auth.signUp({
           email,
           password,
@@ -65,10 +93,18 @@ export function AuthDialog({ open, onOpenChange }: AuthDialogProps) {
             data: {
               nickname,
             },
+            emailRedirectTo: `${window.location.origin}/auth/callback`,
           },
         })
 
-        if (error) throw error
+        if (error) {
+          if (error.message.includes("already registered")) {
+            setErrors(prev => ({ ...prev, email: "This email is already registered" }))
+          } else {
+            throw error
+          }
+          return
+        }
 
         toast({
           title: "Check your email",
@@ -80,7 +116,16 @@ export function AuthDialog({ open, onOpenChange }: AuthDialogProps) {
           password,
         })
 
-        if (error) throw error
+        if (error) {
+          if (error.message.includes("Invalid login credentials")) {
+            setErrors(prev => ({ ...prev, general: "Invalid email or password" }))
+          } else if (error.message.includes("Email not confirmed")) {
+            setErrors(prev => ({ ...prev, general: "Please verify your email first" }))
+          } else {
+            throw error
+          }
+          return
+        }
 
         toast({
           title: "Welcome back!",
@@ -90,8 +135,16 @@ export function AuthDialog({ open, onOpenChange }: AuthDialogProps) {
         onOpenChange(false)
         router.push("/categories")
       }
-    } catch (error) {
-      console.error('Authentication error:', error)
+    } catch (error: any) {
+      console.error('Authentication error:', {
+        message: error?.message,
+        code: error?.code,
+        details: error?.details
+      })
+      setErrors(prev => ({
+        ...prev,
+        general: "An unexpected error occurred. Please try again."
+      }))
       toast({
         title: "Error",
         description: "Something went wrong. Please try again.",
@@ -108,9 +161,9 @@ export function AuthDialog({ open, onOpenChange }: AuthDialogProps) {
     
     if (isSignUp) {
       const error = validatePassword(password)
-      setErrors({ password: error })
+      setErrors(prev => ({ ...prev, password: error }))
     } else {
-      setErrors({ password: "" })
+      setErrors(prev => ({ ...prev, password: "" }))
     }
   }
 
@@ -148,6 +201,12 @@ export function AuthDialog({ open, onOpenChange }: AuthDialogProps) {
             <TabsTrigger value="sign-up">Sign Up</TabsTrigger>
           </TabsList>
 
+          {errors.general && (
+            <div className="mt-4 p-3 bg-destructive/15 text-destructive text-sm rounded-md">
+              {errors.general}
+            </div>
+          )}
+
           <TabsContent value="sign-in">
             <form onSubmit={handleSubmit} data-action="sign-in" className="space-y-4 py-4">
               <div className="space-y-2">
@@ -159,7 +218,14 @@ export function AuthDialog({ open, onOpenChange }: AuthDialogProps) {
                   placeholder="m@example.com"
                   required
                   disabled={isLoading}
+                  aria-invalid={!!errors.email}
+                  aria-describedby={errors.email ? "sign-in-email-error" : undefined}
                 />
+                {errors.email && (
+                  <p id="sign-in-email-error" className="text-sm text-destructive">
+                    {errors.email}
+                  </p>
+                )}
               </div>
               <div className="space-y-2">
                 <Label htmlFor="sign-in-password">Password</Label>
@@ -169,10 +235,24 @@ export function AuthDialog({ open, onOpenChange }: AuthDialogProps) {
                   type="password"
                   required
                   disabled={isLoading}
+                  aria-invalid={!!errors.password}
+                  aria-describedby={errors.password ? "sign-in-password-error" : undefined}
                 />
+                {errors.password && (
+                  <p id="sign-in-password-error" className="text-sm text-destructive">
+                    {errors.password}
+                  </p>
+                )}
               </div>
               <Button type="submit" className="w-full" disabled={isLoading}>
-                {isLoading ? "Signing in..." : "Sign In"}
+                {isLoading ? (
+                  <>
+                    <span className="mr-2">Signing in...</span>
+                    <div className="h-4 w-4 animate-spin rounded-full border-2 border-current border-t-transparent" />
+                  </>
+                ) : (
+                  "Sign In"
+                )}
               </Button>
             </form>
           </TabsContent>

@@ -85,11 +85,11 @@ export function Sidebar() {
                 <Avatar className="h-8 w-8">
                   <AvatarImage src={profile?.avatar_url || undefined} />
                   <AvatarFallback>
-                    {profile?.nickname?.[0]?.toUpperCase()}
+                    {profile?.nickname?.[0]?.toUpperCase() || user.email?.[0]?.toUpperCase() || "?"}
                   </AvatarFallback>
                 </Avatar>
                 <span className="text-sm font-medium">
-                  {profile?.nickname || "User"}
+                  {profile?.nickname || user.email?.split("@")[0] || "User"}
                 </span>
               </Button>
             </DropdownMenuTrigger>

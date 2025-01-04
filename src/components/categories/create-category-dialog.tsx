@@ -10,17 +10,12 @@ import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { useToast } from "@/components/ui/use-toast"
 import { ChevronLeft, ChevronRight } from "lucide-react"
-
-interface Category {
-  id: string
-  title: string
-  date: Date
-}
+import { Category } from "@/lib/categories/categories-service"
 
 interface CreateCategoryDialogProps {
   open: boolean
   onOpenChange: (open: boolean) => void
-  onCreateCategory: (category: Category) => void
+  onCreateCategory: (category: Omit<Category, "id">) => void
 }
 
 const years = Array.from({ length: 10 }, (_, i) => new Date().getFullYear() + i)
@@ -69,15 +64,31 @@ export function CreateCategoryDialog({
       return
     }
 
-    const newCategory: Category = {
-      id: crypto.randomUUID(),
+    console.log('Creating new category:', {
+      title: title.trim(),
+      date: date.toISOString(),
+      color: "#FFE5E5"
+    })
+
+    const newCategory: Omit<Category, "id"> = {
       title: title.trim(),
       date,
+      color: "#FFE5E5",
     }
 
-    onCreateCategory(newCategory)
-    setTitle("")
-    setDate(null)
+    try {
+      onCreateCategory(newCategory)
+      console.log('Category creation initiated')
+      setTitle("")
+      setDate(null)
+    } catch (error) {
+      console.error('Error in create category dialog:', error)
+      toast({
+        title: "Error",
+        description: "Failed to create category. Please try again.",
+        variant: "destructive",
+      })
+    }
   }
 
   return (

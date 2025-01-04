@@ -5,6 +5,8 @@ import { Button } from "@/components/ui/button"
 import { motion } from "framer-motion"
 import { Calendar, Gift, Bell, Users, Heart, Sparkles } from "lucide-react"
 import { AuthDialog } from "@/components/auth/auth-dialog"
+import { UserMenu } from "@/components/layout/user-menu"
+import Link from "next/link"
 
 const fadeIn = {
   initial: { opacity: 0, y: 20 },
@@ -49,7 +51,12 @@ export default function Home() {
   const [showAuthDialog, setShowAuthDialog] = useState(false)
 
   return (
-    <main className="min-h-screen">
+    <main className="min-h-screen relative">
+      {/* User Menu */}
+      <div className="absolute top-4 right-4 z-50">
+        <UserMenu />
+      </div>
+
       {/* Hero Section */}
       <section className="relative py-20 px-4 sm:px-6 lg:px-8">
         <motion.div 
@@ -80,11 +87,23 @@ export default function Home() {
             animate={{ opacity: 1 }}
             transition={{ delay: 0.4 }}
           >
-            <Button size="lg" className="rounded-full" onClick={() => setShowAuthDialog(true)}>
-              Get Started
+            <Button size="lg" className="rounded-full" asChild>
+              <Link href="/categories">
+                <Gift className="w-4 h-4 mr-2" />
+                Gift Categories
+              </Link>
             </Button>
-            <Button size="lg" variant="outline" className="rounded-full" onClick={() => setShowAuthDialog(true)}>
-              Sign In
+            <Button size="lg" variant="outline" className="rounded-full" asChild>
+              <Link href="/groups">
+                <Users className="w-4 h-4 mr-2" />
+                Group Gifts
+              </Link>
+            </Button>
+            <Button size="lg" variant="outline" className="rounded-full" asChild>
+              <Link href="/calendar">
+                <Calendar className="w-4 h-4 mr-2" />
+                Calendar
+              </Link>
             </Button>
           </motion.div>
         </motion.div>
