@@ -17,8 +17,8 @@ interface ProfileSettingsProps {
 export function ProfileSettings({ profile, onUpdate }: ProfileSettingsProps) {
   const [isUpdating, setIsUpdating] = useState(false)
   const [formData, setFormData] = useState({
-    full_name: profile.full_name || "",
-    email: profile.email || "",
+    full_name: profile.fullName || "",
+    email: profile.emailAddress || "",
   })
   const { toast } = useToast()
 
