@@ -91,7 +91,9 @@ export function AuthDialog({ open, onOpenChange }: AuthDialogProps) {
           password,
           options: {
             data: {
-              nickname,
+              nickname: nickname.trim(),
+              avatar_url: null,
+              full_name: nickname.trim(),
             },
             emailRedirectTo: `${window.location.origin}/auth/callback`,
           },
@@ -139,7 +141,8 @@ export function AuthDialog({ open, onOpenChange }: AuthDialogProps) {
       console.error('Authentication error:', {
         message: error?.message,
         code: error?.code,
-        details: error?.details
+        details: error?.details,
+        stack: error?.stack
       })
       setErrors(prev => ({
         ...prev,

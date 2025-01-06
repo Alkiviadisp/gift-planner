@@ -1,4 +1,35 @@
 import { supabase } from "@/lib/supabase/client"
+import { PostgrestError } from "@supabase/supabase-js"
+
+const MAX_RETRIES = 3;
+const RETRY_DELAY = 1000; // 1 second
+const TIMEOUT = 10000; // 10 seconds
+
+const withRetry = async <T,>(
+  operation: () => Promise<T>,
+  retries = MAX_RETRIES,
+  delay = RETRY_DELAY
+): Promise<T> => {
+  let lastError: any
+  
+  for (let attempt = 1; attempt <= retries; attempt++) {
+    try {
+      return await operation()
+    } catch (error: any) {
+      lastError = error
+      console.error(`Attempt ${attempt} failed:`, {
+        error: error?.message,
+        code: error?.code,
+        details: error?.details
+      })
+      
+      if (attempt === retries) break
+      await new Promise(resolve => setTimeout(resolve, delay * attempt))
+    }
+  }
+  
+  throw lastError
+}
 
 export interface Gift {
   id: string
@@ -24,10 +55,6 @@ export interface GiftRecord {
   created_at: string
   updated_at: string
 }
-
-const MAX_RETRIES = 3;
-const RETRY_DELAY = 1000; // 1 second
-const TIMEOUT = 10000; // 10 seconds
 
 const wait = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
 
@@ -287,17 +314,88 @@ export const giftsService = {
   },
 
   async getGiftCount(userId: string, categoryId: string): Promise<number> {
-    const { count, error } = await supabase
-      .from("gifts")
-      .select("*", { count: 'exact', head: true })
-      .eq("user_id", userId)
-      .eq("category_id", categoryId);
-
-    if (error) {
-      console.error("Database error in getGiftCount:", error);
-      throw error;
+    if (!userId || !categoryId) {
+      throw new Error('Missing required parameters: userId and categoryId are required');
     }
 
-    return count || 0;
+    try {
+      const { count, error } = await withRetry(async () => {
+        // Create a timeout promise
+        const timeoutPromise = new Promise((_, reject) => {
+          setTimeout(() => reject(new Error('Database query timed out')), TIMEOUT);
+        });
+
+        // Create the actual query promise
+        const queryPromise = supabase
+          .from("gifts")
+          .select("*", { count: 'exact', head: true })
+          .eq("user_id", userId)
+          .eq("category_id", categoryId);
+
+        // Race between timeout and query
+        const result = await Promise.race([queryPromise, timeoutPromise]) as any;
+
+        if (result.error) {
+          const pgError = result.error as PostgrestError;
+          console.error("Database error in getGiftCount:", {
+            error: pgError,
+            code: pgError.code,
+            message: pgError.message,
+            details: pgError.details,
+            hint: pgError.hint,
+            userId,
+            categoryId
+          });
+
+          // Handle specific error cases
+          if (pgError.code === '42P01') {
+            throw new Error('Table not found. Database might be misconfigured.');
+          } else if (pgError.code === '42501') {
+            throw new Error('Permission denied. Please check your access rights.');
+          } else if (pgError.code?.startsWith('28')) {
+            throw new Error('Authentication error. Please log in again.');
+          } else if (pgError.code === 'PGRST301') {
+            throw new Error('Database connection timeout. Please try again.');
+          }
+
+          throw pgError;
+        }
+
+        return result;
+      }, MAX_RETRIES, RETRY_DELAY);
+
+      if (error) {
+        console.error("Error in getGiftCount after retries:", {
+          error,
+          code: error.code,
+          message: error.message,
+          details: error.details,
+          hint: error.hint,
+          userId,
+          categoryId
+        });
+        throw error;
+      }
+
+      return count || 0;
+    } catch (error: any) {
+      console.error("Unexpected error in getGiftCount:", {
+        error: error.message || error,
+        code: error.code,
+        stack: error.stack,
+        userId,
+        categoryId,
+        timestamp: new Date().toISOString()
+      });
+      
+      // Provide a user-friendly error message
+      if (error.message?.includes('timeout')) {
+        throw new Error('The request took too long to complete. Please try again.');
+      } else if (error.code?.startsWith('PGRST')) {
+        throw new Error('Database connection error. Please check your internet connection.');
+      } else {
+        throw new Error('Failed to get gift count: ' + (error.message || 'Unknown error'));
+      }
+    }
   },
 } 

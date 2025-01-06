@@ -53,154 +53,148 @@ export class CategoryError extends Error {
 }
 
 export const categoriesService = {
-  async getCategories(userId: string, retryCount = 0): Promise<Category[]> {
+  async verifyAccess(userId: string): Promise<boolean> {
+    try {
+      console.log('Verifying access for user:', userId);
+      
+      // First check if the user has access to their profile
+      const { data: profileData, error: profileError } = await supabase
+        .from('profiles')
+        .select('id')
+        .eq('id', userId)
+        .single()
+
+      if (profileError) {
+        console.error('Profile access check failed:', {
+          error: profileError,
+          code: profileError.code,
+          message: profileError.message,
+          details: profileError.details,
+          userId
+        })
+        return false
+      }
+
+      // Then check if they can access gift categories
+      const { data: categoryData, error: categoryError } = await supabase
+        .from('gift_categories')
+        .select('count')
+        .eq('user_id', userId)
+        .limit(1)
+
+      if (categoryError) {
+        console.error('Category access check failed:', {
+          error: categoryError,
+          code: categoryError.code,
+          message: categoryError.message,
+          details: categoryError.details,
+          userId
+        })
+        return false
+      }
+
+      console.log('Access verification successful for user:', userId);
+      return true
+    } catch (error: any) {
+      console.error('Access verification failed:', {
+        error: error?.message || error,
+        code: error?.code,
+        details: error?.details,
+        stack: error?.stack,
+        userId
+      })
+      return false
+    }
+  },
+
+  async getCategories(userId: string): Promise<Category[]> {
     if (!userId) {
       throw new CategoryError('User ID is required to fetch categories', 'MISSING_USER_ID');
     }
 
     try {
-      console.log('Fetching categories for user:', userId)
-      
-      // First check if the table exists
+      console.log('Starting getCategories for user:', userId);
+
+      // First verify access
+      const hasAccess = await this.verifyAccess(userId)
+      if (!hasAccess) {
+        console.error('Access denied for user:', userId);
+        throw new CategoryError(
+          'Access denied. Please sign in again.',
+          'ACCESS_DENIED'
+        )
+      }
+
+      // First check if the table exists and we can access it
       const { error: tableCheckError } = await supabase
         .from("gift_categories")
         .select("count")
         .limit(1)
 
       if (tableCheckError) {
-        console.error('Error checking gift_categories table:', tableCheckError)
+        console.error('Error checking gift_categories table:', {
+          error: tableCheckError,
+          code: tableCheckError.code,
+          message: tableCheckError.message,
+          details: tableCheckError.details,
+          userId
+        })
         throw new CategoryError(
           'Database not properly initialized',
           'DB_NOT_INITIALIZED',
           tableCheckError
         );
       }
+
+      console.log('Table check passed, fetching categories...');
       
       // Now fetch the categories
-      const response = await supabase
+      const { data, error } = await supabase
         .from("gift_categories")
         .select("*")
         .eq("user_id", userId)
         .order("created_at", { ascending: false })
 
-      console.log('Raw response from Supabase:', {
-        status: response.status,
-        statusText: response.statusText,
-        data: response.data,
-        error: response.error,
-      })
-
-      if (response.error) {
+      if (error) {
+        console.error('Error fetching categories:', {
+          error,
+          code: error.code,
+          message: error.message,
+          details: error.details,
+          userId
+        })
         throw new CategoryError(
-          response.error.message,
-          response.error.code,
-          response.error.details
+          error.message,
+          error.code,
+          error.details
         );
       }
 
-      if (!response.data) {
-        console.log('No categories found, returning empty array')
+      if (!data) {
+        console.log('No categories found for user:', userId);
         return []
       }
 
-      // Validate the data structure
-      const isValidData = Array.isArray(response.data) && response.data.every(record => 
-        typeof record === 'object' &&
-        record !== null &&
-        'id' in record &&
-        'name' in record &&
-        'created_at' in record
-      )
+      console.log('Successfully fetched categories:', {
+        count: data.length,
+        userId
+      });
 
-      if (!isValidData) {
-        console.error('Invalid data structure received:', response.data)
-        throw new CategoryError(
-          'Invalid data structure received from the server',
-          'INVALID_DATA_STRUCTURE',
-          response.data
-        );
-      }
-
-      const mappedCategories = (response.data as CategoryRecord[]).map((record) => {
-        try {
-          if (!record.id || !record.name || !record.created_at) {
-            throw new Error('Missing required fields in category record');
-          }
-
-          return {
-            id: record.id,
-            title: record.name,
-            date: new Date(record.created_at),
-            color: record.color || getRandomColor(),
-          }
-        } catch (err) {
-          console.error('Error mapping category record:', {
-            record,
-            error: err
-          })
-          throw new CategoryError(
-            'Failed to process category data',
-            'DATA_MAPPING_ERROR',
-            { record, error: err }
-          );
-        }
-      })
-
-      console.log(`Successfully mapped ${mappedCategories.length} categories:`, 
-        mappedCategories.map(c => ({ id: c.id, title: c.title }))
-      )
-      
-      return mappedCategories
-
+      return data.map((record: CategoryRecord) => ({
+        id: record.id,
+        title: record.name,
+        date: new Date(record.created_at),
+        color: record.color || getRandomColor(),
+      }))
     } catch (error: any) {
-      // If it's already a CategoryError, just rethrow it
-      if (error instanceof CategoryError) {
-        throw error;
-      }
-
-      // Detailed error logging
-      console.error("Error in getCategories:", {
-        error: {
-          name: error?.name,
-          message: error?.message,
-          code: error?.code,
-          details: error?.details,
-          hint: error?.hint,
-          stack: error?.stack
-        },
-        context: {
-          userId,
-          retryCount,
-          timestamp: new Date().toISOString()
-        }
+      console.error('Error in getCategories:', {
+        error: error?.message || error,
+        code: error?.code,
+        details: error?.details,
+        stack: error?.stack,
+        userId
       })
-
-      // Implement retry logic for specific errors
-      const shouldRetry = retryCount < MAX_RETRIES && (
-        error.code === 'PGRST301' || // Unauthorized
-        error.code === '40001' || // Serialization failure
-        error.code === 'PGRST116' || // Resource not found
-        error.message?.toLowerCase().includes('connection') ||
-        error.message?.toLowerCase().includes('network') ||
-        error.message?.toLowerCase().includes('timeout')
-      );
-
-      if (shouldRetry) {
-        console.log(`Retrying getCategories (attempt ${retryCount + 1} of ${MAX_RETRIES})`)
-        await wait(RETRY_DELAY * Math.pow(2, retryCount)) // Exponential backoff
-        return this.getCategories(userId, retryCount + 1)
-      }
-
-      // Convert to CategoryError with appropriate message
-      throw new CategoryError(
-        error.message || 'Failed to fetch categories',
-        error.code || 'UNKNOWN_ERROR',
-        {
-          originalError: error,
-          details: error.details || error.message,
-          hint: error.hint
-        }
-      );
+      throw error
     }
   },
 

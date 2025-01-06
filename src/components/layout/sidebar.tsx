@@ -26,6 +26,12 @@ import {
 
 const navItems = [
   {
+    id: "home",
+    title: "Home",
+    href: "/",
+    icon: Home,
+  },
+  {
     id: "categories",
     title: "Gift Categories",
     href: "/categories",
@@ -48,14 +54,20 @@ const navItems = [
 export function Sidebar() {
   const pathname = usePathname()
   const [showAuthDialog, setShowAuthDialog] = useState(false)
-  const { user, profile, signOut } = useSupabase()
+  const { user, profile, signOut, isLoading } = useSupabase()
 
   return (
     <div className="flex h-screen w-[200px] flex-col border-r bg-background px-2">
       <div className="flex h-14 items-center border-b px-2">
-        <Link href="/" className="flex items-center gap-2 font-semibold">
-          🎁 Gift Planner
-        </Link>
+        <Button
+          variant="ghost"
+          className="flex items-center gap-2 font-semibold hover:bg-transparent"
+          asChild
+        >
+          <Link href="/">
+            🎁 Gift Planner
+          </Link>
+        </Button>
       </div>
       <div className="flex-1 space-y-1 py-4">
         {navItems.map((item) => (
@@ -84,13 +96,26 @@ export function Sidebar() {
                 className="w-full justify-start gap-2 px-2"
               >
                 <Avatar className="h-8 w-8">
-                  <AvatarImage src={profile?.avatar_url || undefined} />
-                  <AvatarFallback>
-                    {profile?.nickname?.[0]?.toUpperCase() || user.email?.[0]?.toUpperCase() || "?"}
-                  </AvatarFallback>
+                  {isLoading ? (
+                    <div className="h-full w-full animate-pulse rounded-full bg-muted" />
+                  ) : (
+                    <>
+                      <AvatarImage 
+                        src={profile?.avatar_url || undefined} 
+                        className="object-cover"
+                      />
+                      <AvatarFallback>
+                        {profile?.nickname?.[0]?.toUpperCase() || user.email?.[0]?.toUpperCase() || "?"}
+                      </AvatarFallback>
+                    </>
+                  )}
                 </Avatar>
                 <span className="text-sm font-medium">
-                  {profile?.nickname || user.email?.split("@")[0] || "User"}
+                  {isLoading ? (
+                    <div className="h-4 w-24 animate-pulse rounded bg-muted" />
+                  ) : (
+                    profile?.nickname || user.email?.split("@")[0] || "User"
+                  )}
                 </span>
               </Button>
             </DropdownMenuTrigger>

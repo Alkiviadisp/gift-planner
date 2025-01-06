@@ -60,8 +60,8 @@ create domain valid_url as text
 -- Step 5: Create base tables
 create table if not exists profiles (
   id uuid references auth.users on delete cascade primary key,
-  nickname text not null,
-  avatar_url valid_url,
+  nickname text default 'User' not null,
+  avatar_url text,  -- Changed from valid_url to text to be more flexible
   updated_at timestamp with time zone default timezone('utc'::text, now()) not null,
   google_calendar_enabled boolean default false not null,
   google_calendar_refresh_token text,
@@ -82,15 +82,55 @@ create table if not exists gift_categories (
   unique(user_id, name)  -- Prevent duplicate category names per user
 );
 
+-- First, drop the existing gift_groups table
+drop table if exists gift_groups cascade;
+
+-- Create the gift_groups table with the correct structure
 create table if not exists gift_groups (
   id uuid default uuid_generate_v4() primary key,
   user_id uuid references auth.users on delete cascade not null,
-  name text not null,
-  description text,
+  title text not null,
+  occasion text not null,
+  date timestamp with time zone not null,
+  price decimal(10,2) not null check (price > 0),
+  product_url text,
+  product_image_url text,
+  comments text,
+  participants text[] default '{}',
   created_at timestamp with time zone default timezone('utc'::text, now()) not null,
-  updated_at timestamp with time zone default timezone('utc'::text, now()) not null,
-  unique(user_id, name)  -- Prevent duplicate group names per user
+  updated_at timestamp with time zone default timezone('utc'::text, now()) not null
 );
+
+-- Create indexes
+create index if not exists idx_gift_groups_user_id on gift_groups(user_id);
+create index if not exists idx_gift_groups_created_at on gift_groups(created_at desc);
+
+-- Enable RLS
+alter table gift_groups enable row level security;
+
+-- Create RLS policies
+create policy "Users can view their own gift groups"
+  on gift_groups for select
+  using (auth.uid() = user_id);
+
+create policy "Users can create their own gift groups"
+  on gift_groups for insert
+  with check (auth.uid() = user_id);
+
+create policy "Users can update their own gift groups"
+  on gift_groups for update
+  using (auth.uid() = user_id);
+
+create policy "Users can delete their own gift groups"
+  on gift_groups for delete
+  using (auth.uid() = user_id);
+
+-- Create updated_at trigger
+drop trigger if exists handle_updated_at on gift_groups;
+create trigger handle_updated_at
+  before update on gift_groups
+  for each row
+  execute function public.handle_updated_at();
 
 create table if not exists gifts (
   id uuid default uuid_generate_v4() primary key,
@@ -150,39 +190,90 @@ create policy "Anyone can upload a gift image"
 -- Step 9: Create RLS policies
 do $$ 
 begin
-  -- Profiles policies
-  if not exists (select 1 from pg_policies where policyname = 'Profiles are viewable by everyone') then
-    create policy "Profiles are viewable by everyone"
-      on profiles for select
-      using ( true );
-  end if;
+  -- Drop existing profile policies
+  drop policy if exists "Profiles are viewable by everyone" on profiles;
+  drop policy if exists "Users can manage their own profile" on profiles;
+  drop policy if exists "Users can view their own profile" on profiles;
+  drop policy if exists "Users can insert their own profile" on profiles;
+  drop policy if exists "Users can update their own profile" on profiles;
+  drop policy if exists "Users can delete their own profile" on profiles;
 
-  if not exists (select 1 from pg_policies where policyname = 'Users can manage their own profile') then
-    create policy "Users can manage their own profile"
-      on profiles for all
-      using ( auth.uid() = id );
-  end if;
+  -- Create new profile policies with more permissive rules
+  create policy "Users can view their own profile"
+    on profiles for select
+    using (auth.uid() = id OR auth.role() = 'service_role');
 
-  -- Gift categories policies
-  if not exists (select 1 from pg_policies where policyname = 'Users can manage their own gift categories') then
-    create policy "Users can manage their own gift categories"
-      on gift_categories for all
-      using ( auth.uid() = user_id );
-  end if;
+  create policy "Users can insert their own profile"
+    on profiles for insert
+    with check (auth.uid() = id OR auth.role() = 'service_role');
 
-  -- Gift groups policies
-  if not exists (select 1 from pg_policies where policyname = 'Users can manage their own gift groups') then
-    create policy "Users can manage their own gift groups"
-      on gift_groups for all
-      using ( auth.uid() = user_id );
-  end if;
+  create policy "Users can update their own profile"
+    on profiles for update
+    using (auth.uid() = id OR auth.role() = 'service_role');
 
-  -- Gifts policies
-  if not exists (select 1 from pg_policies where policyname = 'Users can manage their own gifts') then
-    create policy "Users can manage their own gifts"
-      on gifts for all
-      using ( auth.uid() = user_id );
-  end if;
+  create policy "Users can delete their own profile"
+    on profiles for delete
+    using (auth.uid() = id OR auth.role() = 'service_role');
+
+  -- Drop existing gift category policies
+  drop policy if exists "Users can manage their own gift categories" on gift_categories;
+  
+  -- Create separate policies for gift categories
+  create policy "Users can view their own gift categories"
+    on gift_categories for select
+    using (auth.uid() = user_id OR auth.role() = 'service_role');
+
+  create policy "Users can create their own gift categories"
+    on gift_categories for insert
+    with check (auth.uid() = user_id OR auth.role() = 'service_role');
+
+  create policy "Users can update their own gift categories"
+    on gift_categories for update
+    using (auth.uid() = user_id OR auth.role() = 'service_role');
+
+  create policy "Users can delete their own gift categories"
+    on gift_categories for delete
+    using (auth.uid() = user_id OR auth.role() = 'service_role');
+
+  -- Drop existing gift groups policies
+  drop policy if exists "Users can manage their own gift groups" on gift_groups;
+  
+  -- Create separate policies for gift groups
+  create policy "Users can view their own gift groups"
+    on gift_groups for select
+    using (auth.uid() = user_id OR auth.role() = 'service_role');
+
+  create policy "Users can create their own gift groups"
+    on gift_groups for insert
+    with check (auth.uid() = user_id OR auth.role() = 'service_role');
+
+  create policy "Users can update their own gift groups"
+    on gift_groups for update
+    using (auth.uid() = user_id OR auth.role() = 'service_role');
+
+  create policy "Users can delete their own gift groups"
+    on gift_groups for delete
+    using (auth.uid() = user_id OR auth.role() = 'service_role');
+
+  -- Drop existing gifts policies
+  drop policy if exists "Users can manage their own gifts" on gifts;
+  
+  -- Create separate policies for gifts
+  create policy "Users can view their own gifts"
+    on gifts for select
+    using (auth.uid() = user_id OR auth.role() = 'service_role');
+
+  create policy "Users can create their own gifts"
+    on gifts for insert
+    with check (auth.uid() = user_id OR auth.role() = 'service_role');
+
+  create policy "Users can update their own gifts"
+    on gifts for update
+    using (auth.uid() = user_id OR auth.role() = 'service_role');
+
+  create policy "Users can delete their own gifts"
+    on gifts for delete
+    using (auth.uid() = user_id OR auth.role() = 'service_role');
 end $$;
 
 -- Step 10: Create view
@@ -204,17 +295,7 @@ returns trigger
 language plpgsql
 security definer set search_path = public
 as $$
-declare
-  nickname_val text;
 begin
-  -- Get nickname from metadata or email
-  nickname_val := coalesce(
-    new.raw_user_meta_data->>'nickname',  -- First try to get nickname from metadata
-    new.raw_user_meta_data->>'full_name', -- Then try full_name
-    split_part(new.email, '@', 1)         -- Finally fallback to email
-  );
-
-  -- Insert profile with all required fields
   insert into public.profiles (
     id,
     nickname,
@@ -229,8 +310,8 @@ begin
   )
   values (
     new.id,
-    nickname_val,
-    null,
+    coalesce(new.raw_user_meta_data->>'nickname', split_part(new.email, '@', 1), 'User'),
+    new.raw_user_meta_data->>'avatar_url',
     now(),
     false,
     null,
@@ -242,6 +323,12 @@ begin
   return new;
 end;
 $$;
+
+-- Create trigger for new user creation
+drop trigger if exists on_auth_user_created on auth.users;
+create trigger on_auth_user_created
+  after insert on auth.users
+  for each row execute procedure public.handle_new_user();
 
 create or replace function public.handle_updated_at()
 returns trigger as $$
@@ -269,11 +356,6 @@ end;
 $$;
 
 -- Step 12: Create triggers
-drop trigger if exists on_auth_user_created on auth.users;
-create trigger on_auth_user_created
-  after insert on auth.users
-  for each row execute procedure public.handle_new_user();
-
 drop trigger if exists handle_updated_at on gift_categories;
 create trigger handle_updated_at
   before update on gift_categories
@@ -294,3 +376,59 @@ create trigger handle_updated_at
 
 -- Step 13: Grant permissions
 grant execute on function public.lookup_user_by_email(text) to authenticated; 
+
+-- Add better constraints and indexes to profiles table
+alter table profiles
+  add constraint nickname_length check (char_length(nickname) between 1 and 50),
+  add constraint reminder_time_range check (reminder_time between 1 and 10080), -- 1 minute to 1 week
+  alter column updated_at set default now(),
+  alter column created_at set default now();
+
+-- Add useful indexes
+create index if not exists profiles_user_lookup_idx on profiles (nickname, avatar_url);
+create index if not exists profiles_notification_idx on profiles (notifications_enabled, reminder_time)
+  where notifications_enabled = true;
+
+-- Add trigger for automatic updated_at
+create trigger set_updated_at
+  before update on profiles
+  for each row
+  execute function update_updated_at_column(); 
+
+-- Enable RLS on backup tables
+alter table if exists public.profiles_backup enable row level security;
+alter table if exists public.gift_categories_backup enable row level security;
+alter table if exists public.gift_groups_backup enable row level security;
+alter table if exists public.gifts_backup enable row level security;
+
+-- Create policies for backup tables
+do $$ 
+begin
+  -- Profiles backup policies
+  drop policy if exists "Only service role can access profiles backup" on profiles_backup;
+  create policy "Only service role can access profiles backup"
+    on profiles_backup
+    using (auth.role() = 'service_role')
+    with check (auth.role() = 'service_role');
+
+  -- Gift categories backup policies
+  drop policy if exists "Only service role can access gift categories backup" on gift_categories_backup;
+  create policy "Only service role can access gift categories backup"
+    on gift_categories_backup
+    using (auth.role() = 'service_role')
+    with check (auth.role() = 'service_role');
+
+  -- Gift groups backup policies
+  drop policy if exists "Only service role can access gift groups backup" on gift_groups_backup;
+  create policy "Only service role can access gift groups backup"
+    on gift_groups_backup
+    using (auth.role() = 'service_role')
+    with check (auth.role() = 'service_role');
+
+  -- Gifts backup policies
+  drop policy if exists "Only service role can access gifts backup" on gifts_backup;
+  create policy "Only service role can access gifts backup"
+    on gifts_backup
+    using (auth.role() = 'service_role')
+    with check (auth.role() = 'service_role');
+end $$; 

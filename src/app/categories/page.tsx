@@ -9,6 +9,7 @@ import { useSupabase } from "@/lib/supabase/provider"
 import { categoriesService, Category, CategoryError } from "@/lib/categories/categories-service"
 import { useToast } from "@/components/ui/use-toast"
 import { Button } from "@/components/ui/button"
+import { supabase } from "@/lib/supabase/client"
 
 export default function CategoriesPage() {
   const [categories, setCategories] = useState<Category[]>([])
@@ -21,63 +22,73 @@ export default function CategoriesPage() {
 
   useEffect(() => {
     const loadCategoriesIfNeeded = async () => {
-      // Only load categories if:
-      // 1. We haven't loaded them yet
-      // 2. Auth check is complete
-      // 3. User is logged in
-      // 4. Profile is loaded
-      if (!hasLoadedInitially && !isAuthLoading && user && profile) {
+      console.log('Auth state:', {
+        isAuthLoading,
+        hasUser: !!user,
+        hasProfile: !!profile,
+        userId: user?.id,
+        hasLoadedInitially
+      })
+
+      // If still loading auth, wait
+      if (isAuthLoading) {
+        console.log('Still loading auth, waiting...')
+        return
+      }
+
+      // If no user after auth load complete, redirect to login
+      if (!isAuthLoading && !user) {
+        console.log('No user found after auth load, redirecting to login...')
+        window.location.href = '/'
+        return
+      }
+
+      // Load categories if we have a user and haven't loaded yet
+      if (!hasLoadedInitially && user?.id) {
+        console.log('Loading categories for user:', user.id)
         await loadCategories()
         setHasLoadedInitially(true)
       }
     }
     
     loadCategoriesIfNeeded()
-  }, [user, isAuthLoading, hasLoadedInitially, profile])
+  }, [user, isAuthLoading, hasLoadedInitially])
 
   const loadCategories = async () => {
     if (!user?.id) {
       console.log('No user ID available, skipping category load')
+      setError('Please sign in to view categories')
       return
     }
 
     console.log('Starting to load categories for user:', {
       userId: user.id,
       hasProfile: !!profile,
-      isAuthLoading
+      isAuthLoading,
+      authState: {
+        hasUser: !!user,
+        email: user.email,
+        lastSignInAt: user.last_sign_in_at
+      }
     })
 
     setIsLoading(true)
     setError(null)
 
-    let retryCount = 0
-    const maxRetries = 3
-    const initialTimeout = 10000 // 10 seconds
-
-    const attemptLoad = async (timeout: number): Promise<Category[]> => {
-      try {
-        console.log(`Attempting to load categories (attempt ${retryCount + 1}/${maxRetries + 1}, timeout: ${timeout}ms)`)
-        
-        const timeoutPromise = new Promise((_, reject) => {
-          setTimeout(() => reject(new CategoryError('Request timed out', 'TIMEOUT')), timeout)
-        })
-
-        const categoriesPromise = categoriesService.getCategories(user.id)
-        return await Promise.race([categoriesPromise, timeoutPromise]) as Category[]
-      } catch (error) {
-        if (error instanceof CategoryError && error.code === 'TIMEOUT' && retryCount < maxRetries) {
-          retryCount++
-          console.log(`Timeout occurred, retrying with longer timeout (${timeout * 1.5}ms)`)
-          // Wait a bit before retrying
-          await new Promise(resolve => setTimeout(resolve, 1000))
-          return attemptLoad(timeout * 1.5)
-        }
-        throw error
-      }
-    }
-
     try {
-      const data = await attemptLoad(initialTimeout)
+      // First verify the session is valid
+      const { data: { session }, error: sessionError } = await supabase.auth.getSession()
+      
+      if (sessionError || !session) {
+        console.error('Session verification failed:', sessionError)
+        throw new CategoryError(
+          'Session expired. Please sign in again.',
+          'SESSION_EXPIRED'
+        )
+      }
+
+      console.log('Session verified, loading categories...')
+      const data = await categoriesService.getCategories(user.id)
 
       console.log('Categories loaded successfully:', {
         count: data.length,
@@ -96,7 +107,6 @@ export default function CategoriesPage() {
         },
         context: {
           userId: user.id,
-          retryCount,
           timestamp: new Date().toISOString()
         }
       })
@@ -107,36 +117,26 @@ export default function CategoriesPage() {
       
       if (error instanceof CategoryError) {
         switch (error.code) {
-          case 'DB_NOT_INITIALIZED':
-            errorMessage = "The database is not properly initialized. Please contact support."
-            break;
-          case 'TIMEOUT':
-            errorMessage = "The connection is taking longer than expected. Please check your connection and try again."
-            break;
-          case 'MISSING_USER_ID':
-            errorMessage = "Authentication error. Please sign in again."
-            shouldRefresh = true
-            break;
+          case 'SESSION_EXPIRED':
           case 'PGRST301':
             errorMessage = "Session expired. Please sign in again."
             shouldRefresh = true
-            break;
-          case 'INVALID_DATA_STRUCTURE':
-            errorMessage = "Server returned invalid data. Please try again."
-            break;
-          case 'DATA_MAPPING_ERROR':
-            errorMessage = "Error processing data. Please try again."
-            break;
-          case 'UNKNOWN_ERROR':
-            errorMessage = error.message || "An unknown error occurred. Please try again."
-            break;
+            break
+          case 'DB_NOT_INITIALIZED':
+            errorMessage = "Database error. Please try again later."
+            break
+          case 'MISSING_USER_ID':
+            errorMessage = "Authentication error. Please sign in again."
+            shouldRefresh = true
+            break
           default:
-            if (error.message) {
-              errorMessage = error.message
+            if (error.message?.toLowerCase().includes('permission denied')) {
+              errorMessage = "Access denied. Please sign in again."
+              shouldRefresh = true
+            } else {
+              errorMessage = error.message || "An unknown error occurred."
             }
         }
-      } else if (error.message?.toLowerCase().includes('network')) {
-        errorMessage = "Network error. Please check your connection."
       }
 
       setError(errorMessage)
@@ -147,9 +147,9 @@ export default function CategoriesPage() {
       })
 
       if (shouldRefresh) {
-        // Wait a bit before refreshing to show the error message
+        console.log('Session issue detected, refreshing page...')
         setTimeout(() => {
-          window.location.reload()
+          window.location.href = '/'
         }, 2000)
       }
     } finally {

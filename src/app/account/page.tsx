@@ -1,6 +1,6 @@
 "use client"
 
-import { useState, useCallback } from "react"
+import { useState, useCallback, useEffect } from "react"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
@@ -27,18 +27,50 @@ const reminderOptions = [
 ]
 
 export default function AccountPage() {
-  const { user, profile, refreshProfile } = useSupabase()
+  const { user, profile, refreshProfile, isLoading: isAuthLoading } = useSupabase()
   const [isLoading, setIsLoading] = useState(false)
   const { toast } = useToast()
+
+  useEffect(() => {
+    // If we have a user but no profile, try to refresh it
+    if (user && !profile && !isAuthLoading) {
+      refreshProfile()
+    }
+  }, [user, profile, isAuthLoading, refreshProfile])
 
   const handleAvatarUpdate = useCallback(async () => {
     await refreshProfile()
   }, [refreshProfile])
 
-  if (!user || !profile) {
+  // Show loading state while checking auth
+  if (isAuthLoading) {
+    return (
+      <div className="flex h-[50vh] items-center justify-center">
+        <div className="text-center">
+          <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary mb-2"></div>
+          <p className="text-muted-foreground">Loading...</p>
+        </div>
+      </div>
+    )
+  }
+
+  // Show sign in message if no user
+  if (!user) {
     return (
       <div className="flex h-[50vh] items-center justify-center">
         <p className="text-muted-foreground">Please sign in to view settings.</p>
+      </div>
+    )
+  }
+
+  // Show loading state while fetching profile
+  if (!profile) {
+    return (
+      <div className="flex h-[50vh] items-center justify-center">
+        <div className="text-center">
+          <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary mb-2"></div>
+          <p className="text-muted-foreground">Loading profile...</p>
+        </div>
       </div>
     )
   }

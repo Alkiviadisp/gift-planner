@@ -1,130 +1,151 @@
 import { createClient } from '@supabase/supabase-js'
 
-const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL
-const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY
-
-// More detailed logging of environment variables
-console.log('Supabase Configuration:', {
-  url: {
-    exists: !!supabaseUrl,
-    valid: supabaseUrl?.startsWith('https://'),
-    length: supabaseUrl?.length || 0,
-  },
-  anonKey: {
-    exists: !!supabaseAnonKey,
-    length: supabaseAnonKey?.length || 0,
-  }
-})
+// Supabase client configuration
+const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!
+const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
 
 if (!supabaseUrl || !supabaseAnonKey) {
-  throw new Error('Missing environment variables: NEXT_PUBLIC_SUPABASE_URL and/or NEXT_PUBLIC_SUPABASE_ANON_KEY')
+  throw new Error('Missing Supabase environment variables')
 }
 
-if (!supabaseUrl.startsWith('https://')) {
-  throw new Error('Invalid NEXT_PUBLIC_SUPABASE_URL format: Must start with https://')
-}
-
-// Create the Supabase client with additional options
+// Configure client with better defaults
 export const supabase = createClient(supabaseUrl, supabaseAnonKey, {
   auth: {
     persistSession: true,
     autoRefreshToken: true,
     detectSessionInUrl: true,
     storageKey: 'gift-planner-auth',
-    flowType: 'pkce',
+    storage: typeof window !== 'undefined' ? window.localStorage : undefined,
+    flowType: 'pkce'
   },
   db: {
     schema: 'public'
   },
   global: {
-    headers: {
-      'x-application-name': 'gift-planner'
-    }
+    headers: { 'x-my-custom-header': 'gift-planner' }
   },
-  // Add retry configuration
   realtime: {
     params: {
-      eventsPerSecond: 10,
-    },
+      eventsPerSecond: 2
+    }
   }
 })
 
-// Test the connection with retry logic
-const testConnection = async (retries = 3, delay = 1000) => {
-  for (let attempt = 1; attempt <= retries; attempt++) {
-    try {
-      console.log(`Testing Supabase connection (attempt ${attempt}/${retries})...`)
-      
-      // Test auth configuration
-      const { data: { session }, error: authError } = await supabase.auth.getSession()
-      console.log('Auth configuration test:', {
-        success: !authError,
-        hasSession: !!session,
-        error: authError ? {
-          message: authError.message,
-          name: authError.name,
-          status: authError.status
-        } : null
-      })
-
-      if (authError) {
-        throw new Error(`Auth configuration error: ${authError.message}`)
-      }
-
-      // Test database access
-      const { data, error: dbError } = await supabase
-        .from('profiles')
-        .select('count')
-        .limit(1)
-        .single()
-
-      console.log('Database connection test:', {
-        success: !dbError,
-        data: data,
-        error: dbError ? {
-          message: dbError.message,
-          code: dbError.code,
-          details: dbError.details,
-          hint: dbError.hint
-        } : null
-      })
-
-      if (dbError) {
-        if (dbError.code === 'PGRST301') {
-          throw new Error('Database access error: Invalid API key or unauthorized access')
-        } else if (dbError.code === 'PGRST204') {
-          throw new Error('Database access error: Schema validation failed')
-        } else {
-          throw new Error(`Database access error: ${dbError.message}`)
-        }
-      }
-
-      console.log('Supabase connection test successful!')
-      return true
-    } catch (err: any) {
-      console.error(`Supabase connection test failed (attempt ${attempt}/${retries}):`, {
-        name: err?.name || 'Unknown Error',
-        message: err?.message || 'No message available',
-        stack: err?.stack || 'No stack trace available',
-        code: err?.code || 'No error code available'
-      })
-
-      if (attempt === retries) {
-        return false
-      }
-
-      // Wait before retrying
-      await new Promise(resolve => setTimeout(resolve, delay))
+// Add connection health check with detailed error logging
+export const checkConnection = async () => {
+  try {
+    const startTime = Date.now()
+    
+    // First verify environment variables
+    if (!supabaseUrl || !supabaseAnonKey) {
+      throw new Error('Missing Supabase configuration')
     }
+
+    // Check auth status
+    const { data: { session }, error: authError } = await supabase.auth.getSession()
+    if (authError) {
+      throw new Error(`Auth check failed: ${authError.message}`)
+    }
+
+    // Check database connection with timeout
+    const timeoutPromise = new Promise((_, reject) => {
+      setTimeout(() => reject(new Error('Database connection timeout')), 5000)
+    })
+
+    const dbCheckPromise = supabase
+      .from('profiles')
+      .select('count')
+      .limit(1)
+      .single()
+
+    const { error: dbError } = await Promise.race([dbCheckPromise, timeoutPromise]) as any
+
+    const endTime = Date.now()
+    const responseTime = endTime - startTime
+
+    if (dbError) {
+      console.error('Database connection check failed:', {
+        error: dbError,
+        code: dbError.code || 'UNKNOWN',
+        message: dbError.message || 'Unknown error',
+        details: dbError.details || 'No details available',
+        hint: dbError.hint,
+        responseTime: `${responseTime}ms`
+      })
+      return false
+    }
+
+    // Log successful connection
+    console.log('Database connection successful', {
+      responseTime: `${responseTime}ms`,
+      url: supabaseUrl.split('@')[1] // Log only the domain for security
+    })
+
+    return true
+  } catch (error: any) {
+    console.error('Unexpected error during connection check:', {
+      error: error.message || error,
+      stack: error.stack,
+      timestamp: new Date().toISOString()
+    })
+    return false
   }
-  return false
 }
 
-// Run the connection test and handle the result
-testConnection().then((success) => {
-  if (!success) {
-    console.error('Failed to establish Supabase connection after all retries. Please check your configuration.')
-  } else {
-    console.log('Supabase connection established successfully!')
+// Add connection pooling helper with better error handling
+export const getPooledConnection = async () => {
+  let retries = 3
+  let lastError = null
+
+  while (retries > 0) {
+    try {
+      console.log(`Connection attempt ${4 - retries}/3`)
+      const isConnected = await checkConnection()
+      
+      if (isConnected) {
+        console.log('Successfully established database connection')
+        return supabase
+      }
+
+      console.log(`Connection attempt failed, ${retries - 1} retries remaining`)
+      retries--
+
+      if (retries > 0) {
+        const delay = (4 - retries) * 1000 // Increasing delay with each retry
+        console.log(`Waiting ${delay}ms before next attempt...`)
+        await new Promise(resolve => setTimeout(resolve, delay))
+      }
+    } catch (error: any) {
+      lastError = error
+      console.error('Error getting pooled connection:', {
+        error,
+        name: error?.name,
+        message: error?.message,
+        stack: error?.stack,
+        attempt: 4 - retries
+      })
+      retries--
+      
+      if (retries === 0) {
+        throw new Error(`Failed to establish database connection: ${error.message}`)
+      }
+    }
   }
-}) 
+
+  throw new Error(lastError ? 
+    `Failed to establish database connection: ${lastError.message}` : 
+    'Failed to establish database connection after multiple attempts'
+  )
+}
+
+// Add a helper to check if we have a valid session
+export const getSession = async () => {
+  try {
+    const { data: { session }, error } = await supabase.auth.getSession();
+    if (error) throw error;
+    return session;
+  } catch (error) {
+    console.error('Error getting session:', error);
+    return null;
+  }
+}; 
