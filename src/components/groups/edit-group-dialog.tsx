@@ -87,7 +87,7 @@ export function EditGroupDialog({
     if (!title.trim()) {
       toast({
         title: "Error",
-        description: "Please enter a title",
+        description: "Please enter a title for the Group Gift",
         variant: "destructive",
       })
       return
@@ -96,7 +96,7 @@ export function EditGroupDialog({
     if (!occasion.trim()) {
       toast({
         title: "Error",
-        description: "Please enter an occasion",
+        description: "Please enter an occasion for the Group Gift",
         variant: "destructive",
       })
       return
@@ -105,7 +105,7 @@ export function EditGroupDialog({
     if (!date) {
       toast({
         title: "Error",
-        description: "Please select a date",
+        description: "Please select a date for the Group Gift",
         variant: "destructive",
       })
       return
@@ -114,7 +114,7 @@ export function EditGroupDialog({
     if (!price || isNaN(Number(price)) || Number(price) <= 0) {
       toast({
         title: "Error",
-        description: "Please enter a valid price",
+        description: "Please enter a valid price for the Group Gift",
         variant: "destructive",
       })
       return
@@ -123,7 +123,7 @@ export function EditGroupDialog({
     if (participants.length === 0) {
       toast({
         title: "Error",
-        description: "Please add at least one participant",
+        description: "Please add at least one participant to the Group Gift",
         variant: "destructive",
       })
       return
@@ -158,7 +158,7 @@ export function EditGroupDialog({
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="max-h-[90vh] overflow-y-auto">
         <DialogHeader className="pb-2">
-          <DialogTitle>Edit Gift Group</DialogTitle>
+          <DialogTitle>Edit Group Gift</DialogTitle>
         </DialogHeader>
         <form onSubmit={handleSubmit} className="space-y-3">
           <div className="grid grid-cols-2 gap-3">
@@ -365,13 +365,9 @@ export function EditGroupDialog({
             )}
           </div>
 
-          <Button 
-            type="submit" 
-            className="w-full"
-            disabled={participants.length === 0}
-          >
-            Update Gift Group
-          </Button>
+          <div className="flex justify-end">
+            <Button type="submit">Update Group Gift</Button>
+          </div>
         </form>
       </DialogContent>
     </Dialog>

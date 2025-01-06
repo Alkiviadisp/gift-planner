@@ -27,7 +27,7 @@ export function CreateGroupCard({ onCreateGroup }: CreateGroupCardProps) {
         <CardHeader className="relative py-8">
           <div className="flex items-center justify-center flex-col space-y-3">
             <Plus className="h-6 w-6 text-gray-500" />
-            <p className="text-gray-500 text-base">Create Gift Group</p>
+            <p className="text-gray-500 text-base">Create Group Gift</p>
           </div>
         </CardHeader>
       </Card>

@@ -39,10 +39,10 @@ export default function GroupsPage() {
       setError(null)
     } catch (error) {
       console.error("Error loading groups:", error)
-      setError("Failed to load gift groups")
+      setError("Failed to load Group Gifts")
       toast({
         title: "Error",
-        description: "Failed to load gift groups. Please try again.",
+        description: "Failed to load Group Gifts. Please try again.",
         variant: "destructive",
       })
     } finally {
@@ -56,25 +56,20 @@ export default function GroupsPage() {
   }, [user])
 
   const handleCreateGroup = async (group: Omit<GiftGroup, "id" | "user_id" | "created_at" | "updated_at">) => {
-    if (!user) {
-      console.log('No user found in handleCreateGroup')
-      return
-    }
+    if (!user) return
 
     try {
-      console.log('Creating group:', group)
       const newGroup = await groupsService.createGroup(user.id, group)
-      console.log('Group created:', newGroup)
-      setGroups((prev) => [...prev, newGroup])
+      setGroups((prev) => [newGroup, ...prev])
       toast({
         title: "Success",
-        description: "Gift group created successfully!",
+        description: "Group Gift created successfully!",
       })
     } catch (error) {
       console.error("Error creating group:", error)
       toast({
         title: "Error",
-        description: "Failed to create gift group. Please try again.",
+        description: "Failed to create Group Gift. Please try again.",
         variant: "destructive",
       })
     }
@@ -86,13 +81,13 @@ export default function GroupsPage() {
       setGroups((prev) => prev.filter((group) => group.id !== groupId))
       toast({
         title: "Success",
-        description: "Gift group deleted successfully!",
+        description: "Group Gift deleted successfully!",
       })
     } catch (error) {
       console.error("Error deleting group:", error)
       toast({
         title: "Error",
-        description: "Failed to delete gift group. Please try again.",
+        description: "Failed to delete Group Gift. Please try again.",
         variant: "destructive",
       })
     }
@@ -104,13 +99,13 @@ export default function GroupsPage() {
       setGroups((prev) => prev.map((group) => group.id === groupId ? updated : group))
       toast({
         title: "Success",
-        description: "Gift group updated successfully!",
+        description: "Group Gift updated successfully!",
       })
     } catch (error) {
       console.error("Error updating group:", error)
       toast({
         title: "Error",
-        description: "Failed to update gift group. Please try again.",
+        description: "Failed to update Group Gift. Please try again.",
         variant: "destructive",
       })
     }
@@ -119,8 +114,9 @@ export default function GroupsPage() {
   if (!user) {
     return (
       <div className="container py-8">
-        <h1 className="text-3xl font-bold mb-8">Gift Groups</h1>
-        <div className="text-center py-8">Please log in to view your gift groups.</div>
+        <div className="flex h-[50vh] items-center justify-center">
+          <p className="text-muted-foreground">Please sign in to view categories.</p>
+        </div>
       </div>
     )
   }
@@ -128,7 +124,7 @@ export default function GroupsPage() {
   if (isLoading) {
     return (
       <div className="container py-8">
-        <h1 className="text-3xl font-bold mb-8">Gift Groups</h1>
+        <h1 className="text-3xl font-bold mb-8">Group Gifts</h1>
         <div className="text-center py-8">Loading...</div>
       </div>
     )
@@ -136,7 +132,7 @@ export default function GroupsPage() {
 
   return (
     <div className="container py-8">
-      <h1 className="text-3xl font-bold mb-8">Gift Groups</h1>
+      <h1 className="text-3xl font-bold mb-8">Group Gifts</h1>
       
       {error ? (
         <div className="text-center py-8 text-red-500">{error}</div>

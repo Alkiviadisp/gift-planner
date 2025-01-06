@@ -138,7 +138,7 @@ export function CreateGroupDialog({
     if (!title.trim()) {
       toast({
         title: "Error",
-        description: "Please enter a title",
+        description: "Please enter a title for the Group Gift",
         variant: "destructive",
       })
       return
@@ -147,7 +147,7 @@ export function CreateGroupDialog({
     if (!occasion.trim()) {
       toast({
         title: "Error",
-        description: "Please enter an occasion",
+        description: "Please enter an occasion for the Group Gift",
         variant: "destructive",
       })
       return
@@ -156,7 +156,7 @@ export function CreateGroupDialog({
     if (!date) {
       toast({
         title: "Error",
-        description: "Please select a date",
+        description: "Please select a date for the Group Gift",
         variant: "destructive",
       })
       return
@@ -165,7 +165,7 @@ export function CreateGroupDialog({
     if (!price || isNaN(Number(price)) || Number(price) <= 0) {
       toast({
         title: "Error",
-        description: "Please enter a valid price",
+        description: "Please enter a valid price for the Group Gift",
         variant: "destructive",
       })
       return
@@ -174,7 +174,7 @@ export function CreateGroupDialog({
     if (participants.length === 0) {
       toast({
         title: "Error",
-        description: "Please add at least one participant",
+        description: "Please add at least one participant to the Group Gift",
         variant: "destructive",
       })
       return
@@ -189,6 +189,7 @@ export function CreateGroupDialog({
       product_image_url: productImageUrl || undefined,
       comments: comments.trim() || undefined,
       participants,
+      color: `hsl(${Math.floor(Math.random() * 360)}, ${70 + Math.random() * 10}%, ${85 + Math.random() * 10}%)`,
     }
 
     try {
@@ -207,7 +208,7 @@ export function CreateGroupDialog({
       console.error('Error in create group dialog:', error)
       toast({
         title: "Error",
-        description: "Failed to create gift group. Please try again.",
+        description: "Failed to create Group Gift. Please try again.",
         variant: "destructive",
       })
     }
@@ -217,7 +218,7 @@ export function CreateGroupDialog({
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="max-h-[90vh] overflow-y-auto">
         <DialogHeader className="pb-2">
-          <DialogTitle>Create Gift Group</DialogTitle>
+          <DialogTitle>Create Group Gift</DialogTitle>
         </DialogHeader>
         <form onSubmit={handleSubmit} className="space-y-3">
           <div className="grid grid-cols-2 gap-3">
@@ -424,13 +425,9 @@ export function CreateGroupDialog({
             )}
           </div>
 
-          <Button 
-            type="submit" 
-            className="w-full"
-            disabled={participants.length === 0}
-          >
-            Create Gift Group
-          </Button>
+          <div className="flex justify-end">
+            <Button type="submit">Create Group Gift</Button>
+          </div>
         </form>
       </DialogContent>
     </Dialog>
