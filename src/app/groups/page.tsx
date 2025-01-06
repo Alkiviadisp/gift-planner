@@ -98,6 +98,24 @@ export default function GroupsPage() {
     }
   }
 
+  const handleUpdateGroup = async (groupId: string, updatedGroup: Omit<GiftGroup, "id" | "user_id" | "created_at" | "updated_at">) => {
+    try {
+      const updated = await groupsService.updateGroup(groupId, updatedGroup)
+      setGroups((prev) => prev.map((group) => group.id === groupId ? updated : group))
+      toast({
+        title: "Success",
+        description: "Gift group updated successfully!",
+      })
+    } catch (error) {
+      console.error("Error updating group:", error)
+      toast({
+        title: "Error",
+        description: "Failed to update gift group. Please try again.",
+        variant: "destructive",
+      })
+    }
+  }
+
   if (!user) {
     return (
       <div className="container py-8">
@@ -130,6 +148,7 @@ export default function GroupsPage() {
               key={group.id} 
               group={group}
               onDelete={() => handleDeleteGroup(group.id)}
+              onUpdate={handleUpdateGroup}
             />
           ))}
         </div>

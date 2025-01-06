@@ -164,7 +164,7 @@ export function SupabaseProvider({
   const [isLoading, setIsLoading] = useState(true)
   const [isInitialized, setIsInitialized] = useState(false)
   const [isProfileLoading, setIsProfileLoading] = useState(false)
-  const [isAvatarLoading, setIsAvatarLoading] = useState(false)
+  const [lastProfileRefresh, setLastProfileRefresh] = useState<number>(0)
   const router = useRouter()
   const connection = useConnectionState()
 
@@ -177,8 +177,6 @@ export function SupabaseProvider({
     let lastError: any;
     let operationName = operation.name || 'anonymous operation';
     const timeout = getOperationTimeout(operationType);
-
-    console.log(`Starting ${operationName} with timeout ${timeout}ms`);
 
     for (let attempt = 1; attempt <= retries; attempt++) {
       try {
@@ -195,7 +193,6 @@ export function SupabaseProvider({
         const controller = new AbortController();
         const timeoutId = setTimeout(() => {
           controller.abort();
-          console.error(`Operation timed out after ${timeout}ms`);
         }, timeout);
 
         try {
@@ -230,13 +227,8 @@ export function SupabaseProvider({
           break;
         }
 
-        // Use longer delays for file operations
-        const baseDelay = operationType === 'file' ? 
-          CONNECTION_RETRY_DELAY * 2 : 
-          CONNECTION_RETRY_DELAY;
-
         const delay = Math.min(
-          baseDelay * Math.pow(2, attempt - 1),
+          CONNECTION_RETRY_DELAY * Math.pow(2, attempt - 1),
           10000 // Max 10 seconds delay
         );
         
@@ -245,15 +237,33 @@ export function SupabaseProvider({
       }
     }
 
-    console.error(`All ${retries} attempts failed for ${operationName}`);
     throw lastError || new Error('Operation failed after all retries');
   }, [connection]);
 
-  // Update refreshProfile with better caching and avatar handling
-  const refreshProfile = useCallback(async () => {
+  // Add profile caching logic
+  const PROFILE_CACHE_DURATION = 5 * 60 * 1000 // 5 minutes
+
+  const shouldRefreshProfile = useCallback(() => {
+    if (!user) return false
+    if (!profile) return true
+    if (profile.id !== user.id) return true
+    
+    const timeSinceLastRefresh = Date.now() - lastProfileRefresh
+    return timeSinceLastRefresh > PROFILE_CACHE_DURATION
+  }, [user, profile, lastProfileRefresh])
+
+  // Update refreshProfile with caching
+  const refreshProfile = useCallback(async (force: boolean = false) => {
     if (!user) {
       console.log('No user found in refreshProfile, skipping profile refresh')
       setProfile(null)
+      setIsProfileLoading(false)
+      return
+    }
+
+    // Check if we should skip refresh
+    if (!force && !shouldRefreshProfile()) {
+      console.log('Profile is still fresh, skipping refresh')
       return
     }
 
@@ -265,7 +275,6 @@ export function SupabaseProvider({
 
     try {
       setIsProfileLoading(true)
-      setIsAvatarLoading(true)
       return await withRetry(async () => {
         console.log('Refreshing profile for user:', {
           userId: user.id,
@@ -293,24 +302,8 @@ export function SupabaseProvider({
 
         if (existingProfile) {
           console.log('Found existing profile:', existingProfile)
-          
-          // If we have an avatar URL, preload the image
-          if (existingProfile.avatar_url) {
-            try {
-              await new Promise((resolve, reject) => {
-                const img = new Image()
-                img.onload = resolve
-                img.onerror = reject
-                img.src = existingProfile.avatar_url!
-              })
-              console.log('Avatar image preloaded successfully')
-            } catch (error) {
-              console.error('Error preloading avatar image:', error)
-              // Don't throw here, just log the error
-            }
-          }
-          
           setProfile(existingProfile)
+          setLastProfileRefresh(Date.now())
           return existingProfile
         }
 
@@ -343,24 +336,9 @@ export function SupabaseProvider({
           throw new Error('No profile data returned after creation')
         }
 
-        // If we have an avatar URL in the new profile, preload it
-        if (createdProfile.avatar_url) {
-          try {
-            await new Promise((resolve, reject) => {
-              const img = new Image()
-              img.onload = resolve
-              img.onerror = reject
-              img.src = createdProfile.avatar_url!
-            })
-            console.log('Avatar image preloaded successfully')
-          } catch (error) {
-            console.error('Error preloading avatar image:', error)
-            // Don't throw here, just log the error
-          }
-        }
-
         console.log('Profile created successfully:', createdProfile)
         setProfile(createdProfile)
+        setLastProfileRefresh(Date.now())
         return createdProfile
       }, MAX_CONNECTION_RETRIES, 'query')
     } catch (error: any) {
@@ -368,145 +346,51 @@ export function SupabaseProvider({
       throw error
     } finally {
       setIsProfileLoading(false)
-      setIsAvatarLoading(false)
     }
-  }, [user, withRetry, isProfileLoading])
+  }, [user, withRetry, isProfileLoading, shouldRefreshProfile])
 
   // Initialize auth state
   useEffect(() => {
-    let mounted = true
-    
     const initializeAuth = async () => {
       try {
-        console.log('Starting initializeAuth...')
-        setIsLoading(true)
         const { data: { session }, error } = await supabase.auth.getSession()
-        
-        if (error) {
-          console.error('Error getting session:', error)
-          if (mounted) {
-            setIsLoading(false)
-            setIsInitialized(true)
-          }
-          return
-        }
+        if (error) throw error
 
-        if (!session) {
-          console.log('No session found')
-          if (mounted) {
-            setUser(null)
-            setProfile(null)
-            setIsLoading(false)
-            setIsInitialized(true)
-          }
-          return
-        }
-        
-        if (session?.user && mounted) {
-          console.log('Session found, setting user:', {
-            id: session.user.id,
-            email: session.user.email
-          })
+        if (session?.user) {
           setUser(session.user)
-          try {
+          // Only refresh profile if we don't have it yet
+          if (!profile) {
             await refreshProfile()
-          } catch (error) {
-            console.error('Error refreshing profile:', error)
-            // Don't fail initialization if profile refresh fails
           }
-        }
-
-        if (mounted) {
-          setIsLoading(false)
-          setIsInitialized(true)
         }
       } catch (error) {
-        console.error('Error in initializeAuth:', error)
-        if (mounted) {
-          setIsLoading(false)
-          setIsInitialized(true)
-        }
+        console.error('Error initializing auth:', error)
+      } finally {
+        setIsLoading(false)
       }
     }
 
-    // Only initialize if not already initialized
-    if (!isInitialized) {
-      initializeAuth()
-    }
+    initializeAuth()
 
-    // Listen for auth changes
     const { data: { subscription } } = supabase.auth.onAuthStateChange(
       async (event, session) => {
-        if (!mounted) return
-
-        console.log('Auth state changed:', {
-          event,
-          hasSession: !!session,
-          userId: session?.user?.id || 'none'
-        })
-        
-        switch (event) {
-          case 'SIGNED_OUT':
-            console.log('User signed out, clearing state')
-            setUser(null)
-            setProfile(null)
-            setIsInitialized(false)
-            await router.push('/')
-            break
-
-          case 'SIGNED_IN':
-            if (session?.user) {
-              console.log('User signed in:', {
-                id: session.user.id,
-                email: session.user.email
-              })
-              setUser(session.user)
-              try {
-                await refreshProfile()
-                await router.push('/categories')
-              } catch (error) {
-                console.error('Error refreshing profile after sign in:', error)
-                // Still redirect but log the error
-                await router.push('/categories')
-              }
-            }
-            break
-
-          case 'TOKEN_REFRESHED':
-            if (session?.user) {
-              console.log('Token refreshed, updating user:', {
-                id: session.user.id,
-                email: session.user.email
-              })
-              setUser(session.user)
-              try {
-                await refreshProfile()
-              } catch (error) {
-                console.error('Error refreshing profile after token refresh:', error)
-              }
-            }
-            break
-
-          case 'USER_UPDATED':
-            if (session?.user) {
-              console.log('User updated, refreshing state')
-              setUser(session.user)
-              try {
-                await refreshProfile()
-              } catch (error) {
-                console.error('Error refreshing profile after user update:', error)
-              }
-            }
-            break
+        if (session?.user) {
+          setUser(session.user)
+          // Only refresh profile on sign in or user update
+          if (event === 'SIGNED_IN' || event === 'USER_UPDATED') {
+            await refreshProfile()
+          }
+        } else {
+          setUser(null)
+          setProfile(null)
         }
       }
     )
 
     return () => {
-      mounted = false
       subscription.unsubscribe()
     }
-  }, [isInitialized, refreshProfile, router])
+  }, [])
 
   const signOut = async () => {
     try {
@@ -541,9 +425,11 @@ export function SupabaseProvider({
     user,
     profile,
     signOut,
-    refreshProfile,
-    isLoading: isLoading || isProfileLoading || isAvatarLoading,
-  }), [user, profile, signOut, refreshProfile, isLoading, isProfileLoading, isAvatarLoading])
+    refreshProfile: () => refreshProfile(true), // Always force refresh when called explicitly
+    isLoading: isLoading || isProfileLoading,
+    isProfileLoading,
+    isInitialized,
+  }), [user, profile, signOut, refreshProfile, isLoading, isProfileLoading, isInitialized])
 
   return (
     <SupabaseContext.Provider value={value}>

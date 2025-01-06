@@ -14,148 +14,83 @@ import { supabase } from "@/lib/supabase/client"
 export default function CategoriesPage() {
   const [categories, setCategories] = useState<Category[]>([])
   const [showCreateDialog, setShowCreateDialog] = useState(false)
-  const [isLoading, setIsLoading] = useState(true)
+  const [isLoading, setIsLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
-  const { user, isLoading: isAuthLoading, profile } = useSupabase()
+  const { user, isLoading: isAuthLoading } = useSupabase()
   const { toast } = useToast()
-  const [hasLoadedInitially, setHasLoadedInitially] = useState(false)
 
+  // Only load categories once on initial mount if user exists
   useEffect(() => {
-    const loadCategoriesIfNeeded = async () => {
-      console.log('Auth state:', {
-        isAuthLoading,
-        hasUser: !!user,
-        hasProfile: !!profile,
-        userId: user?.id,
-        hasLoadedInitially
-      })
-
-      // If still loading auth, wait
-      if (isAuthLoading) {
-        console.log('Still loading auth, waiting...')
-        return
-      }
-
-      // If no user after auth load complete, redirect to login
-      if (!isAuthLoading && !user) {
-        console.log('No user found after auth load, redirecting to login...')
-        window.location.href = '/'
-        return
-      }
-
-      // Load categories if we have a user and haven't loaded yet
-      if (!hasLoadedInitially && user?.id) {
-        console.log('Loading categories for user:', user.id)
-        await loadCategories()
-        setHasLoadedInitially(true)
-      }
+    if (user?.id && categories.length === 0) {
+      loadCategories();
     }
-    
-    loadCategoriesIfNeeded()
-  }, [user, isAuthLoading, hasLoadedInitially])
+  }, [user?.id]); // Only depend on user ID
 
   const loadCategories = async () => {
     if (!user?.id) {
-      console.log('No user ID available, skipping category load')
-      setError('Please sign in to view categories')
-      return
+      setError('Please sign in to view categories');
+      return;
     }
 
-    console.log('Starting to load categories for user:', {
-      userId: user.id,
-      hasProfile: !!profile,
-      isAuthLoading,
-      authState: {
-        hasUser: !!user,
-        email: user.email,
-        lastSignInAt: user.last_sign_in_at
-      }
-    })
-
-    setIsLoading(true)
-    setError(null)
+    setIsLoading(true);
+    setError(null);
 
     try {
-      // First verify the session is valid
-      const { data: { session }, error: sessionError } = await supabase.auth.getSession()
+      const { data: { session }, error: sessionError } = await supabase.auth.getSession();
       
       if (sessionError || !session) {
-        console.error('Session verification failed:', sessionError)
         throw new CategoryError(
           'Session expired. Please sign in again.',
           'SESSION_EXPIRED'
-        )
+        );
       }
 
-      console.log('Session verified, loading categories...')
-      const data = await categoriesService.getCategories(user.id)
-
-      console.log('Categories loaded successfully:', {
-        count: data.length,
-        categories: data.map(c => ({ id: c.id, title: c.title }))
-      })
-
-      setCategories(data)
+      const data = await categoriesService.getCategories(user.id);
+      setCategories(data);
     } catch (error: any) {
-      console.error("Error loading categories:", {
-        error: {
-          name: error?.name,
-          message: error?.message,
-          code: error?.code,
-          details: error?.details,
-          stack: error?.stack
-        },
-        context: {
-          userId: user.id,
-          timestamp: new Date().toISOString()
-        }
-      })
-
-      // Set user-friendly error message based on error type
-      let errorMessage = "Failed to load categories. Please try again."
-      let shouldRefresh = false
+      let errorMessage = "Failed to load categories. Please try again.";
+      let shouldRefresh = false;
       
       if (error instanceof CategoryError) {
         switch (error.code) {
           case 'SESSION_EXPIRED':
           case 'PGRST301':
-            errorMessage = "Session expired. Please sign in again."
-            shouldRefresh = true
-            break
+            errorMessage = "Session expired. Please sign in again.";
+            shouldRefresh = true;
+            break;
           case 'DB_NOT_INITIALIZED':
-            errorMessage = "Database error. Please try again later."
-            break
+            errorMessage = "Database error. Please try again later.";
+            break;
           case 'MISSING_USER_ID':
-            errorMessage = "Authentication error. Please sign in again."
-            shouldRefresh = true
-            break
+            errorMessage = "Authentication error. Please sign in again.";
+            shouldRefresh = true;
+            break;
           default:
             if (error.message?.toLowerCase().includes('permission denied')) {
-              errorMessage = "Access denied. Please sign in again."
-              shouldRefresh = true
+              errorMessage = "Access denied. Please sign in again.";
+              shouldRefresh = true;
             } else {
-              errorMessage = error.message || "An unknown error occurred."
+              errorMessage = error.message || "An unknown error occurred.";
             }
         }
       }
 
-      setError(errorMessage)
+      setError(errorMessage);
       toast({
         title: "Error",
         description: errorMessage,
         variant: "destructive",
-      })
+      });
 
       if (shouldRefresh) {
-        console.log('Session issue detected, refreshing page...')
         setTimeout(() => {
-          window.location.href = '/'
-        }, 2000)
+          window.location.href = '/';
+        }, 2000);
       }
     } finally {
-      setIsLoading(false)
+      setIsLoading(false);
     }
-  }
+  };
 
   const handleCreateCategory = async (category: Omit<Category, "id">) => {
     if (!user) return

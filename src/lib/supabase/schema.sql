@@ -97,6 +97,7 @@ create table if not exists gift_groups (
   product_image_url text,
   comments text,
   participants text[] default '{}',
+  color text check (color ~* '^#[A-Fa-f0-9]{6}$'),  -- Validate hex color format
   created_at timestamp with time zone default timezone('utc'::text, now()) not null,
   updated_at timestamp with time zone default timezone('utc'::text, now()) not null
 );
