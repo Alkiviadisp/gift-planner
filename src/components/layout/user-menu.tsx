@@ -13,6 +13,7 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu"
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
+import { ThemeToggle } from "./theme-toggle"
 
 export function UserMenu() {
   const { user, profile, signOut, refreshProfile, isLoading } = useSupabase()
@@ -48,7 +49,7 @@ export function UserMenu() {
           </Avatar>
           <Button 
             variant="outline" 
-            className="border-black text-black hover:bg-black/5 rounded-full font-medium"
+            className="border-slate-800 text-black dark:text-white hover:bg-black/5 dark:hover:bg-white/10 rounded-full font-medium"
             onClick={() => setShowAuthDialog(true)}
           >
             Sign In
@@ -105,6 +106,7 @@ export function UserMenu() {
             Account Settings
           </Link>
         </DropdownMenuItem>
+        <ThemeToggle />
         <DropdownMenuItem
           className="cursor-pointer text-red-600 focus:text-red-600"
           onClick={() => signOut()}

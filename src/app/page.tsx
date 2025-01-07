@@ -6,6 +6,7 @@ import { motion } from "framer-motion"
 import { Calendar, Gift, Bell, Users, Heart, Sparkles } from "lucide-react"
 import { AuthDialog } from "@/components/auth/auth-dialog"
 import { UserMenu } from "@/components/layout/user-menu"
+import { ThemeToggleButton } from "@/components/layout/theme-toggle-button"
 import Link from "next/link"
 
 const fadeIn = {
@@ -52,8 +53,9 @@ export default function Home() {
 
   return (
     <main className="min-h-screen relative">
-      {/* User Menu */}
-      <div className="absolute top-4 right-4 z-50">
+      {/* Theme Toggle and User Menu */}
+      <div className="absolute top-4 right-4 z-50 flex items-center gap-2">
+        <ThemeToggleButton />
         <UserMenu />
       </div>
 
