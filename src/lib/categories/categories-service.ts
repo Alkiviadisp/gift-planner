@@ -292,74 +292,78 @@ export const categoriesService = {
   },
 
   async deleteCategory(userId: string, categoryId: string, retryCount = 0): Promise<void> {
-    if (!userId || !categoryId) {
-      throw new CategoryError(
-        'User ID and category ID are required to delete a category',
-        'MISSING_PARAMETERS'
-      );
+    if (!userId) {
+      throw new CategoryError('User ID is required to delete a category', 'MISSING_USER_ID');
     }
 
     try {
-      const response = await supabase
+      const { error } = await supabase
         .from("gift_categories")
         .delete()
-        .eq("user_id", userId)
         .eq("id", categoryId)
+        .eq("user_id", userId)
 
-      if (response.error) {
+      if (error) {
         throw new CategoryError(
-          response.error.message,
-          response.error.code,
-          response.error.details
+          error.message,
+          error.code,
+          error.details
+        );
+      }
+    } catch (error) {
+      if (retryCount < MAX_RETRIES) {
+        await wait(RETRY_DELAY);
+        return this.deleteCategory(userId, categoryId, retryCount + 1);
+      }
+      throw error;
+    }
+  },
+
+  async updateCategory(userId: string, categoryId: string, category: { title: string; date: Date }, retryCount = 0): Promise<Category> {
+    if (!userId) {
+      throw new CategoryError('User ID is required to update a category', 'MISSING_USER_ID');
+    }
+
+    try {
+      const { data, error } = await supabase
+        .from("gift_categories")
+        .update({
+          name: category.title,
+          description: `Occasion date: ${category.date.toISOString().split("T")[0]}`,
+          updated_at: new Date().toISOString(),
+        })
+        .eq("id", categoryId)
+        .eq("user_id", userId)
+        .select()
+        .single()
+
+      if (error) {
+        throw new CategoryError(
+          error.message,
+          error.code,
+          error.details
         );
       }
 
-    } catch (error: any) {
-      // If it's already a CategoryError, just rethrow it
-      if (error instanceof CategoryError) {
-        throw error;
+      if (!data) {
+        throw new CategoryError(
+          'No data returned after category update',
+          'NO_DATA_RETURNED'
+        );
       }
 
-      console.error("Error in deleteCategory:", {
-        error: {
-          name: error?.name,
-          message: error?.message,
-          code: error?.code,
-          details: error?.details,
-          hint: error?.hint,
-          stack: error?.stack
-        },
-        context: {
-          userId,
-          categoryId,
-          retryCount,
-          timestamp: new Date().toISOString()
-        }
-      })
-
-      // Implement retry logic for specific errors
-      const shouldRetry = retryCount < MAX_RETRIES && (
-        error.code === 'PGRST301' || // Unauthorized
-        error.code === '40001' || // Serialization failure
-        error.message?.toLowerCase().includes('connection')
-      );
-
-      if (shouldRetry) {
-        console.log(`Retrying deleteCategory (attempt ${retryCount + 1} of ${MAX_RETRIES})`)
-        await wait(RETRY_DELAY * Math.pow(2, retryCount)) // Exponential backoff
-        return this.deleteCategory(userId, categoryId, retryCount + 1)
+      return {
+        id: data.id,
+        title: data.name,
+        date: new Date(data.created_at),
+        color: data.color!,
       }
-
-      // Convert to CategoryError with appropriate message
-      throw new CategoryError(
-        error.message || 'Failed to delete category',
-        error.code,
-        {
-          originalError: error,
-          details: error.details,
-          hint: error.hint
-        }
-      );
+    } catch (error) {
+      if (retryCount < MAX_RETRIES) {
+        await wait(RETRY_DELAY);
+        return this.updateCategory(userId, categoryId, category, retryCount + 1);
+      }
+      throw error;
     }
-  },
+  }
 } 

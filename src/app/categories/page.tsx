@@ -5,11 +5,13 @@ import { Plus } from "lucide-react"
 import { Card } from "@/components/ui/card"
 import { CreateCategoryDialog } from "@/components/categories/create-category-dialog"
 import { CategoryCard } from "@/components/categories/category-card"
+import { CreateCategoryCard } from "@/components/categories/create-category-card"
 import { useSupabase } from "@/lib/supabase/provider"
 import { categoriesService, Category, CategoryError } from "@/lib/categories/categories-service"
 import { useToast } from "@/components/ui/use-toast"
 import { Button } from "@/components/ui/button"
 import { supabase } from "@/lib/supabase/client"
+import { UserMenu } from "@/components/layout/user-menu"
 
 export default function CategoriesPage() {
   const [categories, setCategories] = useState<Category[]>([])
@@ -212,6 +214,26 @@ export default function CategoriesPage() {
     }
   }
 
+  const handleUpdateCategory = async (categoryId: string, updatedCategory: Omit<Category, "id">) => {
+    if (!user) return
+
+    try {
+      const updated = await categoriesService.updateCategory(user.id, categoryId, updatedCategory)
+      setCategories((prev) => prev.map((cat) => cat.id === categoryId ? updated : cat))
+      toast({
+        title: "Success",
+        description: "Category updated successfully!",
+      })
+    } catch (error: any) {
+      console.error("Error updating category:", error)
+      toast({
+        title: "Error",
+        description: "Failed to update category. Please try again.",
+        variant: "destructive",
+      })
+    }
+  }
+
   // Show loading spinner while checking auth state
   if (isAuthLoading) {
     return (
@@ -238,64 +260,25 @@ export default function CategoriesPage() {
   }
 
   return (
-    <div className="container py-8">
-      <h1 className="text-3xl font-bold mb-8">Gift Categories</h1>
+    <div className="container py-8 relative">
+      {/* User Menu */}
+      <div className="absolute top-4 right-4 z-50">
+        <UserMenu />
+      </div>
 
-      {isLoading ? (
-        <div className="flex justify-center py-8">
-          <div className="text-center">
-            <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary mb-2"></div>
-            <p className="text-muted-foreground">Loading categories...</p>
-          </div>
-        </div>
-      ) : error ? (
-        <div className="flex flex-col items-center justify-center py-8">
-          <p className="text-muted-foreground mb-4">{error}</p>
-          <Button onClick={loadCategories} variant="outline">
-            Try Again
-          </Button>
-        </div>
-      ) : categories.length === 0 ? (
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
-          <Card 
-            className="flex flex-col items-center justify-center h-[140px] cursor-pointer hover:shadow-md transition-shadow border-dashed"
-            onClick={() => setShowCreateDialog(true)}
-            role="button"
-            tabIndex={0}
-            onKeyDown={(e) => {
-              if (e.key === "Enter" || e.key === " ") {
-                e.preventDefault()
-                setShowCreateDialog(true)
-              }
-            }}
-          >
-            <Plus className="h-8 w-8 text-muted-foreground mb-2" />
-            <span className="text-sm text-muted-foreground">Create Category</span>
-          </Card>
-        </div>
+      <h1 className="text-3xl font-bold mb-8">Gift Categories</h1>
+      
+      {error ? (
+        <div className="text-center py-8 text-red-500">{error}</div>
       ) : (
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
-          <Card 
-            className="flex flex-col items-center justify-center h-[140px] cursor-pointer hover:shadow-md transition-shadow border-dashed"
-            onClick={() => setShowCreateDialog(true)}
-            role="button"
-            tabIndex={0}
-            onKeyDown={(e) => {
-              if (e.key === "Enter" || e.key === " ") {
-                e.preventDefault()
-                setShowCreateDialog(true)
-              }
-            }}
-          >
-            <Plus className="h-8 w-8 text-muted-foreground mb-2" />
-            <span className="text-sm text-muted-foreground">Create Category</span>
-          </Card>
-
+          <CreateCategoryCard onCreateCategory={handleCreateCategory} />
           {categories.map((category) => (
             <CategoryCard 
               key={category.id} 
               category={category}
               onDelete={() => handleDeleteCategory(category.id)}
+              onUpdate={handleUpdateCategory}
             />
           ))}
         </div>

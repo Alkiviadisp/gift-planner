@@ -8,6 +8,7 @@ import { groupsService } from "@/lib/groups/groups-service"
 import type { GiftGroup } from "@/lib/groups/groups-service"
 import { useToast } from "@/components/ui/use-toast"
 import { useRouter } from "next/navigation"
+import { UserMenu } from "@/components/layout/user-menu"
 
 export default function GroupsPage() {
   const [groups, setGroups] = useState<GiftGroup[]>([])
@@ -131,7 +132,12 @@ export default function GroupsPage() {
   }
 
   return (
-    <div className="container py-8">
+    <div className="container py-8 relative">
+      {/* User Menu */}
+      <div className="absolute top-4 right-4 z-50">
+        <UserMenu />
+      </div>
+
       <h1 className="text-3xl font-bold mb-8">Group Gifts</h1>
       
       {error ? (

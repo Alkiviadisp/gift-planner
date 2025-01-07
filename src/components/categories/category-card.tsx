@@ -35,9 +35,10 @@ interface Category {
 interface CategoryCardProps {
   category: Category
   onDelete: () => void
+  onUpdate: (categoryId: string, updatedCategory: Omit<Category, "id">) => void
 }
 
-export function CategoryCard({ category, onDelete }: CategoryCardProps) {
+export function CategoryCard({ category, onDelete, onUpdate }: CategoryCardProps) {
   const [showDeleteDialog, setShowDeleteDialog] = useState(false)
   const [showGiftDialog, setShowGiftDialog] = useState(false)
   const [giftCount, setGiftCount] = useState<number | null>(null)
