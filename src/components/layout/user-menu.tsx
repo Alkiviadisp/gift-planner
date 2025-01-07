@@ -1,4 +1,4 @@
-import { useState } from "react"
+import { useState, useEffect } from "react"
 import { User, Home, Settings, LogOut } from "lucide-react"
 import { useSupabase } from "@/lib/supabase/provider"
 import { Button } from "@/components/ui/button"
@@ -15,8 +15,27 @@ import {
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
 
 export function UserMenu() {
-  const { user, profile, signOut } = useSupabase()
+  const { user, profile, signOut, refreshProfile, isLoading } = useSupabase()
   const [showAuthDialog, setShowAuthDialog] = useState(false)
+
+  // Add effect to refresh profile when user changes
+  useEffect(() => {
+    if (user && !profile) {
+      refreshProfile()
+    }
+  }, [user, profile, refreshProfile])
+
+  if (isLoading) {
+    return (
+      <div className="flex items-center gap-4">
+        <Avatar className="h-8 w-8 animate-pulse">
+          <AvatarFallback>
+            <User className="h-4 w-4" />
+          </AvatarFallback>
+        </Avatar>
+      </div>
+    )
+  }
 
   if (!user) {
     return (
@@ -52,7 +71,7 @@ export function UserMenu() {
         >
           <Avatar className="h-8 w-8">
             <AvatarImage 
-              src={profile?.avatar_url || undefined} 
+              src={profile?.avatar_url ?? undefined} 
               alt={profile?.nickname || user.email || 'User avatar'} 
             />
             <AvatarFallback>
@@ -60,7 +79,7 @@ export function UserMenu() {
             </AvatarFallback>
           </Avatar>
           <span className="text-sm font-medium hidden sm:inline-block">
-            {profile?.nickname || user.email?.split('@')[0] || 'User'}
+            {profile?.nickname || user.email?.split('@')[0] || 'Loading...'}
           </span>
         </Button>
       </DropdownMenuTrigger>
@@ -72,7 +91,7 @@ export function UserMenu() {
         <DropdownMenuLabel className="font-normal">
           <div className="flex flex-col space-y-1">
             <p className="text-sm font-medium leading-none">
-              {profile?.nickname || 'User'}
+              {profile?.nickname || user.email?.split('@')[0] || 'Loading...'}
             </p>
             <p className="text-xs leading-none text-muted-foreground">
               {user.email}
