@@ -12,6 +12,8 @@ import { useToast } from "@/components/ui/use-toast"
 import { Button } from "@/components/ui/button"
 import { supabase } from "@/lib/supabase/client"
 import { UserMenu } from "@/components/layout/user-menu"
+import { ThemeToggleButton } from "@/components/layout/theme-toggle-button"
+import { AuthDialog } from "@/components/auth/auth-dialog"
 
 export default function CategoriesPage() {
   const [categories, setCategories] = useState<Category[]>([])
@@ -20,6 +22,7 @@ export default function CategoriesPage() {
   const [error, setError] = useState<string | null>(null)
   const { user, isLoading: isAuthLoading } = useSupabase()
   const { toast } = useToast()
+  const [showAuthDialog, setShowAuthDialog] = useState(false)
 
   // Only load categories once on initial mount if user exists
   useEffect(() => {
@@ -248,13 +251,27 @@ export default function CategoriesPage() {
     )
   }
 
-  // Show sign in message if no user
   if (!user) {
     return (
       <div className="container py-8">
+        {/* Theme Toggle and Sign In */}
+        <div className="absolute top-4 right-4 z-50 flex items-center gap-2">
+          <ThemeToggleButton />
+          <Button 
+            variant="outline" 
+            className="border-slate-800 text-black dark:text-white hover:bg-black/5 dark:hover:bg-white/10 rounded-full font-medium"
+            onClick={() => setShowAuthDialog(true)}
+          >
+            Sign In
+          </Button>
+        </div>
         <div className="flex h-[50vh] items-center justify-center">
           <p className="text-muted-foreground">Please sign in to view categories.</p>
         </div>
+        <AuthDialog 
+          open={showAuthDialog} 
+          onOpenChange={setShowAuthDialog} 
+        />
       </div>
     )
   }
