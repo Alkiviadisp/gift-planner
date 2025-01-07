@@ -26,76 +26,37 @@ export default function CategoriesPage() {
 
   // Only load categories once on initial mount if user exists
   useEffect(() => {
-    if (user?.id && categories.length === 0) {
-      loadCategories();
-    }
-  }, [user?.id]); // Only depend on user ID
-
-  const loadCategories = async () => {
-    if (!user?.id) {
-      setError('Please sign in to view categories');
-      return;
+    if (!user) {
+      console.log('No user found in loadCategories')
+      return
     }
 
-    setIsLoading(true);
-    setError(null);
+    const loadData = async () => {
+      if (categories.length > 0 || isLoading) return;
 
-    try {
-      const { data: { session }, error: sessionError } = await supabase.auth.getSession();
-      
-      if (sessionError || !session) {
-        throw new CategoryError(
-          'Session expired. Please sign in again.',
-          'SESSION_EXPIRED'
-        );
-      }
-
-      const data = await categoriesService.getCategories(user.id);
-      setCategories(data);
-    } catch (error: any) {
-      let errorMessage = "Failed to load categories. Please try again.";
-      let shouldRefresh = false;
-      
-      if (error instanceof CategoryError) {
-        switch (error.code) {
-          case 'SESSION_EXPIRED':
-          case 'PGRST301':
-            errorMessage = "Session expired. Please sign in again.";
-            shouldRefresh = true;
-            break;
-          case 'DB_NOT_INITIALIZED':
-            errorMessage = "Database error. Please try again later.";
-            break;
-          case 'MISSING_USER_ID':
-            errorMessage = "Authentication error. Please sign in again.";
-            shouldRefresh = true;
-            break;
-          default:
-            if (error.message?.toLowerCase().includes('permission denied')) {
-              errorMessage = "Access denied. Please sign in again.";
-              shouldRefresh = true;
-            } else {
-              errorMessage = error.message || "An unknown error occurred.";
-            }
+      try {
+        setIsLoading(true);
+        const data = await categoriesService.getCategories(user.id);
+        if (data) {
+          setCategories(data);
+          setError(null);
         }
+      } catch (error: any) {
+        console.error("Error loading categories:", error);
+        const errorMessage = error?.message || "Failed to load categories. Please try again.";
+        setError(errorMessage);
+        toast({
+          title: "Error",
+          description: errorMessage,
+          variant: "destructive",
+        });
+      } finally {
+        setIsLoading(false);
       }
+    };
 
-      setError(errorMessage);
-      toast({
-        title: "Error",
-        description: errorMessage,
-        variant: "destructive",
-      });
-
-      if (shouldRefresh) {
-        setTimeout(() => {
-          window.location.href = '/';
-        }, 2000);
-      }
-    } finally {
-      setIsLoading(false);
-    }
-  };
+    loadData();
+  }, [user]); // Only depend on user
 
   const handleCreateCategory = async (category: Omit<Category, "id">) => {
     if (!user) return
