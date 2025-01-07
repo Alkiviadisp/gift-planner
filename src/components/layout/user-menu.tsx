@@ -18,12 +18,12 @@ export function UserMenu() {
   const { user, profile, signOut, refreshProfile, isLoading } = useSupabase()
   const [showAuthDialog, setShowAuthDialog] = useState(false)
 
-  // Add effect to refresh profile when user changes
+  // Only refresh profile if we have a user but no profile
   useEffect(() => {
     if (user && !profile) {
       refreshProfile()
     }
-  }, [user, profile, refreshProfile])
+  }, [user]) // Only depend on user changes, not profile
 
   if (isLoading) {
     return (

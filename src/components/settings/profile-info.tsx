@@ -108,6 +108,9 @@ export function ProfileInfo({ isLoading = false, onAvatarUpdate }: ProfileInfoPr
 
       if (error) throw error
 
+      // Refresh the profile to update the UI everywhere
+      await onAvatarUpdate?.()
+
       toast({
         title: "Profile updated",
         description: "Your profile has been updated successfully.",
