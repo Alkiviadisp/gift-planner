@@ -12,6 +12,7 @@ import { useToast } from "@/components/ui/use-toast"
 import { ChevronLeft, ChevronRight, Plus, X, ExternalLink } from "lucide-react"
 import { Textarea } from "@/components/ui/textarea"
 import type { GiftGroup } from "@/lib/groups/groups-service"
+import { PASTEL_COLORS } from "@/lib/categories/categories-service"
 
 interface CreateGroupDialogProps {
   open: boolean
@@ -90,6 +91,11 @@ const getFaviconUrl = (hostname: string): string => {
   return `https://www.google.com/s2/favicons?domain=${hostname}&sz=128`;
 };
 
+const getRandomPastelColor = (): string => {
+  const randomIndex = Math.floor(Math.random() * PASTEL_COLORS.length)
+  return PASTEL_COLORS[randomIndex]!
+}
+
 export function CreateGroupDialog({
   open,
   onOpenChange,
@@ -108,16 +114,17 @@ export function CreateGroupDialog({
 
   const handleProductUrlChange = (url: string) => {
     setProductUrl(url);
-    if (url.trim()) {
-      try {
-        const imageUrl = getDefaultProductImage(url);
-        setProductImageUrl(imageUrl);
-      } catch (error) {
-        console.error('Error processing URL:', error);
-        setProductImageUrl("");
-      }
-    } else {
+    if (!url.trim()) {
       setProductImageUrl("");
+    }
+  };
+
+  const isValidUrl = (urlString: string): boolean => {
+    try {
+      new URL(urlString);
+      return true;
+    } catch (err) {
+      return false;
     }
   };
 
@@ -180,16 +187,36 @@ export function CreateGroupDialog({
       return
     }
 
+    // Validate URL if provided
+    let finalImageUrl = productImageUrl;
+    if (productUrl.trim()) {
+      if (!isValidUrl(productUrl.trim())) {
+        toast({
+          title: "Invalid URL",
+          description: "Please enter a valid URL starting with http:// or https://",
+          variant: "default",
+        })
+        return
+      }
+
+      // Only try to get product image if URL is valid
+      try {
+        finalImageUrl = getDefaultProductImage(productUrl.trim());
+      } catch (error) {
+        finalImageUrl = "";
+      }
+    }
+
     const newGroup: Omit<GiftGroup, "id" | "user_id" | "created_at" | "updated_at"> = {
       title: title.trim(),
       occasion: occasion.trim(),
       date,
       price: Number(price),
       product_url: productUrl.trim() || undefined,
-      product_image_url: productImageUrl || undefined,
+      product_image_url: finalImageUrl || undefined,
       comments: comments.trim() || undefined,
       participants,
-      color: `hsl(${Math.floor(Math.random() * 360)}, ${70 + Math.random() * 10}%, ${85 + Math.random() * 10}%)`,
+      color: getRandomPastelColor(),
     }
 
     try {
