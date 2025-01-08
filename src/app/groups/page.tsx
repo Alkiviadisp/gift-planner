@@ -169,7 +169,7 @@ export default function GroupsPage() {
               key={group.id} 
               group={group}
               onDelete={() => handleDeleteGroup(group.id)}
-              onUpdate={handleUpdateGroup}
+              onUpdateGroup={handleUpdateGroup}
             />
           ))}
         </div>

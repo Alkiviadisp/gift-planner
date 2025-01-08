@@ -1,4 +1,5 @@
 import { supabase } from "@/lib/supabase/client"
+import { createClientComponentClient } from "@supabase/auth-helpers-nextjs"
 
 export interface GiftGroup {
   id: string
@@ -14,6 +15,66 @@ export interface GiftGroup {
   color: string
   created_at: string
   updated_at: string
+}
+
+export async function copySharedGroup(groupId: string, userId: string) {
+  const supabase = createClientComponentClient()
+
+  try {
+    console.log('Copying group:', { groupId, userId })
+
+    // First get the group
+    const { data: group, error: getError } = await supabase
+      .from('gift_groups')
+      .select('*')
+      .eq('id', groupId)
+      .single()
+
+    if (getError) {
+      console.error('Error fetching group:', getError)
+      throw new Error(`Failed to get group: ${getError.message}`)
+    }
+
+    if (!group) {
+      throw new Error('Group not found')
+    }
+
+    console.log('Found group:', group)
+
+    // Create a new group for the user with a new Supabase client
+    const newSupabase = createClientComponentClient()
+    const { data: newGroup, error: insertError } = await newSupabase
+      .from('gift_groups')
+      .insert({
+        title: group.title,
+        occasion: group.occasion,
+        date: new Date(group.date).toISOString(),
+        price: group.price,
+        product_url: group.product_url,
+        product_image_url: group.product_image_url,
+        comments: group.comments,
+        participants: group.participants || [],
+        color: group.color,
+        user_id: userId
+      })
+      .select()
+      .single()
+
+    if (insertError) {
+      console.error('Error inserting new group:', insertError)
+      throw new Error(`Failed to copy group: ${insertError.message}`)
+    }
+
+    console.log('Created new group:', newGroup)
+    return {
+      ...newGroup,
+      date: new Date(newGroup.date),
+      participants: newGroup.participants || []
+    }
+  } catch (error) {
+    console.error('Error in copySharedGroup:', error)
+    throw error
+  }
 }
 
 export const groupsService = {
@@ -142,5 +203,44 @@ export const groupsService = {
       date: new Date(data.date),
       participants: data.participants || []
     }
+  },
+
+  async copySharedGroup(groupId: string, userId: string) {
+    const supabase = createClientComponentClient()
+
+    // First get the group
+    const { data: group, error: getError } = await supabase
+      .from('gift_groups')
+      .select('*')
+      .eq('id', groupId)
+      .single()
+
+    if (getError || !group) {
+      throw new Error('Failed to get group')
+    }
+
+    // Create a new group for the user
+    const { data: newGroup, error: insertError } = await supabase
+      .from('gift_groups')
+      .insert({
+        title: group.title,
+        occasion: group.occasion,
+        date: group.date,
+        price: group.price,
+        product_url: group.product_url,
+        product_image_url: group.product_image_url,
+        comments: group.comments,
+        participants: group.participants,
+        color: group.color,
+        user_id: userId
+      })
+      .select()
+      .single()
+
+    if (insertError) {
+      throw new Error('Failed to copy group')
+    }
+
+    return newGroup
   }
 } 
