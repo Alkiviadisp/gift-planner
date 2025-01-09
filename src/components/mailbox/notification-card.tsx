@@ -2,13 +2,13 @@ import { format } from "date-fns"
 import { Button } from "@/components/ui/button"
 import { Card } from "@/components/ui/card"
 import { Archive, Check, ExternalLink } from "lucide-react"
-import type { Notification } from "@/lib/notifications/notification-service"
+import type { AppNotification } from "@/lib/notifications/notification-service"
 
 interface NotificationCardProps {
-  notification: Notification
+  notification: AppNotification
   onMarkAsRead: (id: string) => void
   onArchive: (id: string) => void
-  onAction: (notification: Notification) => void
+  onAction: (notification: AppNotification) => void
 }
 
 export function NotificationCard({
