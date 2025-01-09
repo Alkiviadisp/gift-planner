@@ -3,7 +3,7 @@ import { useRouter } from 'next/navigation'
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { ScrollArea } from '@/components/ui/scroll-area'
 import { Button } from '@/components/ui/button'
-import { Notification, notificationService } from '@/lib/notifications/notification-service'
+import { AppNotification, notificationService } from '@/lib/notifications/notification-service'
 import { NotificationCard } from './notification-card'
 import { useSupabase } from '@/lib/supabase/provider'
 import { Archive, Check } from 'lucide-react'
@@ -14,7 +14,7 @@ interface MailboxDialogProps {
 }
 
 export function MailboxDialog({ open, onOpenChange }: MailboxDialogProps) {
-  const [notifications, setNotifications] = useState<Notification[]>([])
+  const [notifications, setNotifications] = useState<AppNotification[]>([])
   const [loading, setLoading] = useState(true)
   const router = useRouter()
   const { user } = useSupabase()
@@ -33,17 +33,27 @@ export function MailboxDialog({ open, onOpenChange }: MailboxDialogProps) {
           return
         }
 
+        console.log('Setting up notifications for user:', user.id)
+
         // Load initial notifications
         const initialNotifications = await notificationService.getActiveNotifications()
+        console.log('Initial notifications loaded:', initialNotifications)
         setNotifications(initialNotifications)
 
         // Subscribe to new notifications
+        console.log('Setting up realtime subscription...')
         channel = await notificationService.subscribeToNotifications(
           user.id,
           (notification) => {
-            setNotifications(prev => [notification, ...prev])
+            console.log('Received new notification:', notification)
+            setNotifications(prev => {
+              console.log('Current notifications:', prev)
+              console.log('Adding new notification:', notification)
+              return [notification, ...prev]
+            })
           }
         )
+        console.log('Subscription channel created:', channel)
       } catch (error) {
         console.error('Error setting up notifications:', error)
       } finally {
@@ -51,16 +61,21 @@ export function MailboxDialog({ open, onOpenChange }: MailboxDialogProps) {
       }
     }
 
-    if (open && user) {
+    // Setup notifications when dialog is opened or when user changes
+    if (user) {
       setupNotifications()
+    } else {
+      setNotifications([])
+      setLoading(false)
     }
 
     return () => {
       if (channel) {
+        console.log('Unsubscribing from notifications channel')
         channel.unsubscribe()
       }
     }
-  }, [open, user])
+  }, [user, open]) // Keep both dependencies
 
   const handleMarkAsRead = async (notificationId: string) => {
     try {
@@ -86,7 +101,7 @@ export function MailboxDialog({ open, onOpenChange }: MailboxDialogProps) {
     }
   }
 
-  const handleAction = (notification: Notification) => {
+  const handleAction = (notification: AppNotification) => {
     if (notification.action_url) {
       router.push(notification.action_url)
       onOpenChange(false)

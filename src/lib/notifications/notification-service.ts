@@ -45,6 +45,7 @@ class NotificationService {
       return []
     }
 
+    console.log('Fetching notifications for user:', user.id)
     const { data, error } = await supabase
       .from('mailbox_notifications')
       .select('*')
@@ -58,6 +59,7 @@ class NotificationService {
       throw error
     }
 
+    console.log('Fetched notifications:', data)
     return data as AppNotification[]
   }
 
@@ -125,25 +127,26 @@ class NotificationService {
     onNotification: (notification: AppNotification) => void
   ) {
     const supabase = createClientComponentClient()
+    console.log('Setting up notification subscription for user:', userId)
     
     const channel = supabase
       .channel(`notifications:${userId}`)
       .on(
         'postgres_changes',
         {
-          event: 'INSERT',
+          event: '*',
           schema: 'public',
           table: 'mailbox_notifications',
           filter: `user_id=eq.${userId}`
         },
         async (payload) => {
-          console.log('Received realtime notification:', payload)
+          console.log('Received realtime notification payload:', payload)
           const notification = payload.new as AppNotification
           onNotification(notification)
         }
       )
       .subscribe((status) => {
-        console.log('Subscription status:', status)
+        console.log('Notification subscription status:', status)
       })
 
     return channel

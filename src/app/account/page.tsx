@@ -18,6 +18,7 @@ import { PasswordChange } from "@/components/settings/password-change"
 import { ProfileInfo } from "@/components/settings/profile-info"
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
 import { SubscriptionInfo } from "@/components/settings/subscription-info"
+import { AdminNotificationDialog } from "@/components/admin/admin-notification-dialog"
 
 const reminderOptions = [
   { value: "15", label: "15 minutes before" },
@@ -131,13 +132,20 @@ export default function AccountPage() {
           <TabsContent value="notifications">
             <Card>
               <CardHeader>
-                <CardTitle className="flex items-center gap-2">
-                  <Bell className="h-5 w-5" />
-                  Notification Settings
-                </CardTitle>
-                <CardDescription>
-                  Configure how and when you want to be notified
-                </CardDescription>
+                <div className="flex items-center justify-between">
+                  <div>
+                    <CardTitle className="flex items-center gap-2">
+                      <Bell className="h-5 w-5" />
+                      Notification Settings
+                    </CardTitle>
+                    <CardDescription>
+                      Configure how and when you want to be notified
+                    </CardDescription>
+                  </div>
+                  {profile?.subscription_tier === 'admin' && (
+                    <AdminNotificationDialog />
+                  )}
+                </div>
               </CardHeader>
               <CardContent className="space-y-6">
                 <div className="flex items-center justify-between space-x-2">

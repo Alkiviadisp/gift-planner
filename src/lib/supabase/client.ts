@@ -26,10 +26,25 @@ export const supabase = createClient(supabaseUrl, supabaseAnonKey, {
   },
   realtime: {
     params: {
-      eventsPerSecond: 2
+      eventsPerSecond: 10
     }
   }
 })
+
+// Enable realtime subscription for notifications
+supabase.channel('custom-all-channel')
+  .on(
+    'postgres_changes',
+    {
+      event: '*',
+      schema: 'public',
+      table: 'mailbox_notifications'
+    },
+    (payload) => {
+      console.log('Change received!', payload)
+    }
+  )
+  .subscribe()
 
 // Add connection health check with detailed error logging
 export const checkConnection = async () => {
