@@ -1,15 +1,17 @@
-export interface Profile {
+export type Profile = {
   id: string
-  nickname: string | null
+  nickname: string
   avatar_url: string | null
-  updated_at: string | null
+  updated_at: string
   google_calendar_enabled: boolean
   google_calendar_refresh_token: string | null
-  google_calendar_access_token: string | null
-  google_calendar_token_expiry: string | null
   apple_calendar_enabled: boolean
   notifications_enabled: boolean
-  reminder_time: number | null
+  reminder_time: number
+  created_at: string
+  subscription_tier: 'free' | 'pro' | 'admin'
+  subscription_start_date: string
+  subscription_end_date: string | null
 }
 
 export interface CalendarPreferences {

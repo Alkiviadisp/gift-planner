@@ -313,7 +313,9 @@ begin
     apple_calendar_enabled,
     notifications_enabled,
     reminder_time,
-    created_at
+    created_at,
+    subscription_tier,
+    subscription_start_date
   )
   values (
     new.id,
@@ -325,7 +327,9 @@ begin
     false,
     true,
     1440,
-    now()
+    now(),
+    'free',  -- Default subscription tier
+    now()    -- Subscription start date
   );
   return new;
 end;
@@ -590,5 +594,94 @@ begin
     and status = 'unread';
 
     return v_count;
+end;
+$$; 
+
+-- Create subscription_tiers table
+create table if not exists subscription_tiers (
+  id text primary key,  -- 'free', 'pro', 'admin'
+  name text not null,
+  description text,
+  features jsonb not null default '{}'::jsonb,
+  created_at timestamp with time zone default timezone('utc'::text, now()) not null
+);
+
+-- Insert default subscription tiers
+insert into subscription_tiers (id, name, description, features) values
+  ('free', 'Free', 'Basic features for personal use', '{"max_gifts": 10, "max_groups": 3, "max_categories": 5}'::jsonb),
+  ('pro', 'Pro', 'Advanced features for power users', '{"max_gifts": 1000, "max_groups": 100, "max_categories": 50, "advanced_analytics": true, "priority_support": true}'::jsonb),
+  ('admin', 'Admin', 'Administrative access', '{"max_gifts": -1, "max_groups": -1, "max_categories": -1, "admin_panel": true, "user_management": true}'::jsonb)
+on conflict (id) do nothing;
+
+-- Add subscription fields to profiles table
+alter table if not exists profiles 
+  add column if not exists subscription_tier text references subscription_tiers(id) default 'free' not null,
+  add column if not exists subscription_start_date timestamp with time zone default timezone('utc'::text, now()),
+  add column if not exists subscription_end_date timestamp with time zone;
+
+-- Create subscription_history table for tracking changes
+create table if not exists subscription_history (
+  id uuid default uuid_generate_v4() primary key,
+  user_id uuid references auth.users on delete cascade not null,
+  old_tier text references subscription_tiers(id),
+  new_tier text references subscription_tiers(id) not null,
+  changed_at timestamp with time zone default timezone('utc'::text, now()) not null,
+  changed_by uuid references auth.users on delete set null,  -- Who made the change (null for automatic changes)
+  reason text,  -- Reason for the change
+  metadata jsonb  -- Additional metadata about the change
+);
+
+-- Enable RLS on new tables
+alter table subscription_history enable row level security;
+
+-- Create policies for subscription_history
+create policy "Users can view their own subscription history"
+  on subscription_history for select
+  using (auth.uid() = user_id);
+
+create policy "Only admins can insert subscription history"
+  on subscription_history for insert
+  with check (auth.uid() in (
+    select p.id from profiles p where p.subscription_tier = 'admin'
+  ));
+
+create policy "Only admins can update subscription history"
+  on subscription_history for update
+  using (auth.uid() in (
+    select p.id from profiles p where p.subscription_tier = 'admin'
+  ));
+
+-- Create function to check subscription limits
+create or replace function check_subscription_limits(
+  user_id uuid,
+  limit_type text,  -- 'gifts', 'groups', or 'categories'
+  current_count integer
+)
+returns boolean
+language plpgsql
+security definer
+as $$
+declare
+  user_tier text;
+  tier_limits jsonb;
+  max_items integer;
+begin
+  -- Get user's subscription tier and limits
+  select p.subscription_tier, st.features
+  into user_tier, tier_limits
+  from profiles p
+  join subscription_tiers st on st.id = p.subscription_tier
+  where p.id = user_id;
+
+  -- Get max items for the specific limit type
+  max_items := (tier_limits->>'max_' || limit_type)::integer;
+
+  -- -1 means unlimited
+  if max_items = -1 then
+    return true;
+  end if;
+
+  -- Check if current count is within limits
+  return current_count < max_items;
 end;
 $$; 

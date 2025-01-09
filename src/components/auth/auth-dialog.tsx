@@ -94,6 +94,8 @@ export function AuthDialog({ open, onOpenChange }: AuthDialogProps) {
               nickname: nickname.trim(),
               avatar_url: null,
               full_name: nickname.trim(),
+              subscription_tier: 'free',
+              subscription_start_date: new Date().toISOString()
             },
             emailRedirectTo: `${window.location.origin}/auth/callback`,
           },

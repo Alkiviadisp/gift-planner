@@ -17,6 +17,7 @@ import { AvatarUpload } from "@/components/ui/avatar-upload"
 import { PasswordChange } from "@/components/settings/password-change"
 import { ProfileInfo } from "@/components/settings/profile-info"
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
+import { SubscriptionInfo } from "@/components/settings/subscription-info"
 
 const reminderOptions = [
   { value: "15", label: "15 minutes before" },
@@ -98,18 +99,21 @@ export default function AccountPage() {
         </div>
 
         <Tabs defaultValue="profile" className="space-y-6">
-          <TabsList className="grid w-full grid-cols-3 lg:max-w-[400px]">
+          <TabsList>
             <TabsTrigger value="profile" className="flex items-center gap-2">
               <User className="h-4 w-4" />
               Profile
             </TabsTrigger>
-            <TabsTrigger value="calendar" className="flex items-center gap-2">
-              <Calendar className="h-4 w-4" />
-              Calendar
+            <TabsTrigger value="subscription" className="flex items-center gap-2">
+              Subscription
             </TabsTrigger>
             <TabsTrigger value="notifications" className="flex items-center gap-2">
               <Bell className="h-4 w-4" />
               Notifications
+            </TabsTrigger>
+            <TabsTrigger value="calendar" className="flex items-center gap-2">
+              <Calendar className="h-4 w-4" />
+              Calendar
             </TabsTrigger>
           </TabsList>
 
@@ -120,47 +124,8 @@ export default function AccountPage() {
             </div>
           </TabsContent>
 
-          <TabsContent value="calendar">
-            <Card>
-              <CardHeader>
-                <CardTitle className="flex items-center gap-2">
-                  <Calendar className="h-5 w-5" />
-                  Calendar Integration
-                </CardTitle>
-                <CardDescription>
-                  Connect your calendar to sync gift reminders
-                </CardDescription>
-              </CardHeader>
-              <CardContent className="space-y-6">
-                <div className="flex items-center justify-between space-x-2">
-                  <div className="flex flex-col space-y-1">
-                    <Label htmlFor="google-calendar">Google Calendar</Label>
-                    <span className="text-sm text-muted-foreground">
-                      Sync gift reminders with Google Calendar
-                    </span>
-                  </div>
-                  <Switch
-                    id="google-calendar"
-                    checked={profile?.google_calendar_enabled}
-                    disabled={isLoading}
-                  />
-                </div>
-
-                <div className="flex items-center justify-between space-x-2">
-                  <div className="flex flex-col space-y-1">
-                    <Label htmlFor="apple-calendar">Apple Calendar</Label>
-                    <span className="text-sm text-muted-foreground">
-                      Generate .ics files for Apple Calendar
-                    </span>
-                  </div>
-                  <Switch
-                    id="apple-calendar"
-                    checked={profile?.apple_calendar_enabled}
-                    disabled={isLoading}
-                  />
-                </div>
-              </CardContent>
-            </Card>
+          <TabsContent value="subscription">
+            <SubscriptionInfo />
           </TabsContent>
 
           <TabsContent value="notifications">
@@ -206,6 +171,49 @@ export default function AccountPage() {
                       ))}
                     </SelectContent>
                   </Select>
+                </div>
+              </CardContent>
+            </Card>
+          </TabsContent>
+
+          <TabsContent value="calendar">
+            <Card>
+              <CardHeader>
+                <CardTitle className="flex items-center gap-2">
+                  <Calendar className="h-5 w-5" />
+                  Calendar Integration
+                </CardTitle>
+                <CardDescription>
+                  Connect your calendar to sync gift reminders
+                </CardDescription>
+              </CardHeader>
+              <CardContent className="space-y-6">
+                <div className="flex items-center justify-between space-x-2">
+                  <div className="flex flex-col space-y-1">
+                    <Label htmlFor="google-calendar">Google Calendar</Label>
+                    <span className="text-sm text-muted-foreground">
+                      Sync gift reminders with Google Calendar
+                    </span>
+                  </div>
+                  <Switch
+                    id="google-calendar"
+                    checked={profile?.google_calendar_enabled}
+                    disabled={isLoading}
+                  />
+                </div>
+
+                <div className="flex items-center justify-between space-x-2">
+                  <div className="flex flex-col space-y-1">
+                    <Label htmlFor="apple-calendar">Apple Calendar</Label>
+                    <span className="text-sm text-muted-foreground">
+                      Generate .ics files for Apple Calendar
+                    </span>
+                  </div>
+                  <Switch
+                    id="apple-calendar"
+                    checked={profile?.apple_calendar_enabled}
+                    disabled={isLoading}
+                  />
                 </div>
               </CardContent>
             </Card>
