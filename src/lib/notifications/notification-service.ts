@@ -1,6 +1,6 @@
 import { createClientComponentClient } from '@supabase/auth-helpers-nextjs'
 
-export type Notification = {
+export type AppNotification = {
   id: string
   user_id: string
   title: string
@@ -37,7 +37,7 @@ class NotificationService {
     }
   }
 
-  async getActiveNotifications(limit = 50, offset = 0): Promise<Notification[]> {
+  async getActiveNotifications(limit = 50, offset = 0): Promise<AppNotification[]> {
     const supabase = createClientComponentClient()
     const user = await this.getCurrentUser()
     if (!user) {
@@ -58,7 +58,7 @@ class NotificationService {
       throw error
     }
 
-    return data as Notification[]
+    return data as AppNotification[]
   }
 
   async getUnreadCount(): Promise<number> {
@@ -122,7 +122,7 @@ class NotificationService {
 
   async subscribeToNotifications(
     userId: string,
-    onNotification: (notification: Notification) => void
+    onNotification: (notification: AppNotification) => void
   ) {
     const supabase = createClientComponentClient()
     
@@ -138,7 +138,7 @@ class NotificationService {
         },
         async (payload) => {
           console.log('Received realtime notification:', payload)
-          const notification = payload.new as Notification
+          const notification = payload.new as AppNotification
           onNotification(notification)
         }
       )
@@ -151,5 +151,4 @@ class NotificationService {
 }
 
 // Export a singleton instance
-export const notificationService = new NotificationService()
-export type { Notification } 
+export const notificationService = new NotificationService() 
