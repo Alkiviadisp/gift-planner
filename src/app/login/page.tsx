@@ -28,10 +28,7 @@ export default function LoginPage() {
       const supabase = createClientComponentClient()
       const { data: { user }, error } = await supabase.auth.signInWithPassword({
         email,
-        password,
-        options: {
-          persistSession: true
-        }
+        password
       })
 
       if (error) {
