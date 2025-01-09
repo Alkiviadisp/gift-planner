@@ -64,6 +64,13 @@ export function UserMenu() {
     }
   }, [user])
 
+  const handleNotificationsChange = async () => {
+    if (user) {
+      const count = await notificationService.getUnreadCount()
+      setUnreadCount(count)
+    }
+  }
+
   if (isLoading) {
     return (
       <div className="flex items-center gap-4">
@@ -107,17 +114,24 @@ export function UserMenu() {
         <DropdownMenuTrigger asChild>
           <Button 
             variant="ghost" 
-            className="flex items-center gap-2 px-2"
+            className="flex items-center gap-2 px-2 relative"
           >
-            <Avatar className="h-8 w-8">
-              <AvatarImage 
-                src={profile?.avatar_url ?? undefined} 
-                alt={profile?.nickname || user.email || 'User avatar'} 
-              />
-              <AvatarFallback>
-                {profile?.nickname?.[0]?.toUpperCase() || user.email?.[0]?.toUpperCase() || <User className="h-4 w-4" />}
-              </AvatarFallback>
-            </Avatar>
+            <div className="relative">
+              <Avatar className="h-8 w-8">
+                <AvatarImage 
+                  src={profile?.avatar_url ?? undefined} 
+                  alt={profile?.nickname || user.email || 'User avatar'} 
+                />
+                <AvatarFallback>
+                  {profile?.nickname?.[0]?.toUpperCase() || user.email?.[0]?.toUpperCase() || <User className="h-4 w-4" />}
+                </AvatarFallback>
+              </Avatar>
+              {unreadCount > 0 && (
+                <div className="absolute -top-1 -right-1 flex h-4 w-4 items-center justify-center rounded-full bg-red-500 text-[10px] font-medium text-white ring-2 ring-white dark:ring-gray-900">
+                  {unreadCount > 99 ? '99+' : unreadCount}
+                </div>
+              )}
+            </div>
             <span className="text-sm font-medium hidden sm:inline-block">
               {profile?.nickname || user.email?.split('@')[0] || 'Loading...'}
             </span>
@@ -170,6 +184,7 @@ export function UserMenu() {
       <MailboxDialog
         open={showMailbox}
         onOpenChange={setShowMailbox}
+        onNotificationsChange={handleNotificationsChange}
       />
     </>
   )

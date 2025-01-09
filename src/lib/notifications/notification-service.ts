@@ -1,4 +1,5 @@
 import { createClientComponentClient } from '@supabase/auth-helpers-nextjs'
+import { supabase } from '@/lib/supabase/client'
 
 export type AppNotification = {
   id: string
@@ -21,7 +22,6 @@ export type AppNotification = {
 
 class NotificationService {
   private async getCurrentUser() {
-    const supabase = createClientComponentClient()
     try {
       const { data: { user }, error } = await supabase.auth.getUser()
       if (error) {
@@ -38,7 +38,6 @@ class NotificationService {
   }
 
   async getActiveNotifications(limit = 50, offset = 0): Promise<AppNotification[]> {
-    const supabase = createClientComponentClient()
     const user = await this.getCurrentUser()
     if (!user) {
       console.log('No authenticated user found')
@@ -60,11 +59,16 @@ class NotificationService {
     }
 
     console.log('Fetched notifications:', data)
+    console.log('Detailed notification data:', data?.map(n => ({
+      id: n.id,
+      status: n.status,
+      title: n.title,
+      created_at: n.created_at
+    })))
     return data as AppNotification[]
   }
 
   async getUnreadCount(): Promise<number> {
-    const supabase = createClientComponentClient()
     const user = await this.getCurrentUser()
     if (!user) {
       console.log('No authenticated user found')
@@ -85,7 +89,6 @@ class NotificationService {
   }
 
   async markAsRead(notificationId: string): Promise<void> {
-    const supabase = createClientComponentClient()
     const user = await this.getCurrentUser()
     if (!user) {
       console.log('No authenticated user found')
@@ -104,7 +107,6 @@ class NotificationService {
   }
 
   async archiveNotification(notificationId: string): Promise<void> {
-    const supabase = createClientComponentClient()
     const user = await this.getCurrentUser()
     if (!user) {
       console.log('No authenticated user found')
@@ -124,10 +126,18 @@ class NotificationService {
 
   async subscribeToNotifications(
     userId: string,
-    onNotification: (notification: AppNotification) => void
+    onNotification: (notification: AppNotification, eventType: 'INSERT' | 'UPDATE' | 'DELETE') => void
   ) {
-    const supabase = createClientComponentClient()
     console.log('Setting up notification subscription for user:', userId)
+    
+    // Unsubscribe from any existing subscription with the same topic
+    const existingChannel = supabase.getChannels().find(
+      channel => channel.topic === `notifications:${userId}`
+    )
+    if (existingChannel) {
+      console.log('Found existing subscription, unsubscribing...')
+      await existingChannel.unsubscribe()
+    }
     
     const channel = supabase
       .channel(`notifications:${userId}`)
@@ -142,7 +152,8 @@ class NotificationService {
         async (payload) => {
           console.log('Received realtime notification payload:', payload)
           const notification = payload.new as AppNotification
-          onNotification(notification)
+          const eventType = payload.eventType as 'INSERT' | 'UPDATE' | 'DELETE'
+          onNotification(notification, eventType)
         }
       )
       .subscribe((status) => {
