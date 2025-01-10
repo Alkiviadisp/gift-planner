@@ -7,8 +7,8 @@ export type AppNotification = {
   title: string
   message: string
   type: 'info' | 'success' | 'warning' | 'error'
-  status: 'unread' | 'read' | 'archived'
-  priority: 'low' | 'normal' | 'high'
+  status: 'active' | 'read' | 'archived'
+  priority: 'low' | 'medium' | 'high'
   category: string | null
   requires_action: boolean
   action_url: string | null

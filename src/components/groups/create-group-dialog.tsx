@@ -13,6 +13,7 @@ import { ChevronLeft, ChevronRight, Plus, X, ExternalLink } from "lucide-react"
 import { Textarea } from "@/components/ui/textarea"
 import type { GiftGroup } from "@/lib/groups/groups-service"
 import { PASTEL_COLORS } from "@/lib/categories/categories-service"
+import { cn } from "@/lib/utils"
 
 interface CreateGroupDialogProps {
   open: boolean
@@ -110,7 +111,13 @@ export function CreateGroupDialog({
   const [comments, setComments] = useState("")
   const [currentParticipant, setCurrentParticipant] = useState("")
   const [participants, setParticipants] = useState<string[]>([])
+  const [isValidEmail, setIsValidEmail] = useState(true)
   const { toast } = useToast()
+
+  const validateEmail = (email: string) => {
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
+    return emailRegex.test(email)
+  }
 
   const handleProductUrlChange = (url: string) => {
     setProductUrl(url);
@@ -129,9 +136,30 @@ export function CreateGroupDialog({
   };
 
   const handleAddParticipant = () => {
-    if (currentParticipant.trim()) {
-      setParticipants([...participants, currentParticipant.trim()])
-      setCurrentParticipant("")
+    const email = currentParticipant.trim()
+    if (!email) return
+
+    if (!validateEmail(email)) {
+      setIsValidEmail(false)
+      toast({
+        title: "Invalid Email",
+        description: "Please enter a valid email address",
+        variant: "destructive",
+      })
+      return
+    }
+
+    setIsValidEmail(true)
+    if (!participants.includes(email)) {
+      setParticipants((prev) => [...prev, email])
+    }
+    setCurrentParticipant("")
+  }
+
+  const handleKeyDown = (e: React.KeyboardEvent) => {
+    if (e.key === 'Enter') {
+      e.preventDefault()
+      handleAddParticipant()
     }
   }
 
@@ -406,29 +434,32 @@ export function CreateGroupDialog({
           </div>
 
           <div className="space-y-1.5">
-            <Label htmlFor="participants">Participants</Label>
+            <Label>Participants (Email Addresses)</Label>
             <div className="flex gap-2">
               <Input
-                id="participants"
                 value={currentParticipant}
-                onChange={(e) => setCurrentParticipant(e.target.value)}
-                placeholder="Enter participant name"
-                onKeyDown={(e) => {
-                  if (e.key === 'Enter') {
-                    e.preventDefault()
-                    handleAddParticipant()
-                  }
+                onChange={(e) => {
+                  setCurrentParticipant(e.target.value)
+                  setIsValidEmail(true)
                 }}
+                onKeyDown={handleKeyDown}
+                placeholder="Enter email address"
+                className={cn(
+                  "flex-1",
+                  !isValidEmail && "border-red-500 focus-visible:ring-red-500"
+                )}
               />
-              <Button 
-                type="button" 
-                variant="outline" 
-                size="icon"
+              <Button
+                type="button"
                 onClick={handleAddParticipant}
+                variant="secondary"
               >
-                <Plus className="h-4 w-4" />
+                Add
               </Button>
             </div>
+            {!isValidEmail && (
+              <p className="text-sm text-red-500">Please enter a valid email address</p>
+            )}
             {participants.length > 0 && (
               <div className="mt-1.5 flex flex-wrap gap-1.5 max-h-[80px] overflow-y-auto">
                 {participants.map((participant, index) => (

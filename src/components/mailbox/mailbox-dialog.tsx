@@ -133,8 +133,10 @@ export function MailboxDialog({ open, onOpenChange, onNotificationsChange }: Mai
     }
   }
 
-  const handleAction = (notification: AppNotification) => {
+  const handleAction = async (notification: AppNotification) => {
     if (notification.action_url) {
+      // Mark as read before navigating
+      await handleMarkAsRead(notification.id)
       router.push(notification.action_url)
       onOpenChange(false)
     }
@@ -142,7 +144,7 @@ export function MailboxDialog({ open, onOpenChange, onNotificationsChange }: Mai
 
   const handleMarkAllAsRead = async () => {
     try {
-      const unreadNotifications = notifications.filter((n: AppNotification) => n.status === 'unread')
+      const unreadNotifications = notifications.filter((n: AppNotification) => n.status === 'active')
       await Promise.all(
         unreadNotifications.map((n: AppNotification) => notificationService.markAsRead(n.id))
       )
@@ -169,7 +171,7 @@ export function MailboxDialog({ open, onOpenChange, onNotificationsChange }: Mai
     }
   }
 
-  const hasUnread = notifications.some((n: AppNotification) => n.status === 'unread')
+  const hasUnread = notifications.some((n: AppNotification) => n.status === 'active')
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -184,7 +186,7 @@ export function MailboxDialog({ open, onOpenChange, onNotificationsChange }: Mai
                 <DialogTitle className="text-xl font-semibold">Notifications</DialogTitle>
                 <DialogDescription className="text-sm text-muted-foreground mt-1">
                   {notifications.length > 0 
-                    ? `You have ${notifications.filter(n => n.status === 'unread').length} unread notifications`
+                    ? `You have ${notifications.filter(n => n.status === 'active').length} unread notifications`
                     : 'Stay updated with your latest notifications'
                   }
                 </DialogDescription>

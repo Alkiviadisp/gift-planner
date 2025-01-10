@@ -54,7 +54,7 @@ export function NotificationCard({
   onArchive,
   onAction,
 }: NotificationCardProps) {
-  const isUnread = notification.status === 'unread'
+  const isUnread = notification.status === 'active'
   const hasAction = notification.requires_action && notification.action_url
   const style = notificationStyles[notification.type]
   const Icon = style.icon

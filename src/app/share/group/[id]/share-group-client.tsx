@@ -1,8 +1,7 @@
 'use client'
 
 import { useEffect, useState } from "react"
-import { useRouter } from "next/navigation"
-import { createClientComponentClient } from "@supabase/auth-helpers-nextjs"
+import { useRouter, useSearchParams } from "next/navigation"
 import { Card } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Calendar, Users, DollarSign, Gift, MessageSquare } from "lucide-react"
@@ -17,39 +16,47 @@ import {
   TwitterIcon,
   WhatsappIcon
 } from "react-share"
-import { copySharedGroup } from "@/lib/groups/groups-service"
+import { groupsService } from "@/lib/groups/groups-service"
 import type { GiftGroup } from "@/lib/groups/groups-service"
-import type { Session } from "@supabase/auth-helpers-nextjs"
+import { useSupabase } from "@/lib/supabase/provider"
+import { createClientComponentClient } from "@supabase/auth-helpers-nextjs"
 
 export default function ShareGroupClient({ id }: { id: string }) {
   const supabase = createClientComponentClient()
+  const { user, isLoading: isSessionLoading } = useSupabase()
   const router = useRouter()
+  const searchParams = useSearchParams()
   const { toast } = useToast()
   const [group, setGroup] = useState<GiftGroup | null>(null)
-  const [session, setSession] = useState<Session | null>(null)
   const [isLoading, setIsLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const isFromNotification = searchParams.get('from') === 'notification'
+  const notificationId = searchParams.get('notification_id')
 
-  // Handle authentication state
+  // Add debug render for session state
+  console.log('Render state:', {
+    user: user ? 'Found' : 'Not found',
+    isSessionLoading,
+    isFromNotification,
+    notificationId
+  });
+
+  // Initialize session
   useEffect(() => {
-    const getSession = async () => {
+    const initSession = async () => {
       try {
-        const { data: { session: currentSession } } = await supabase.auth.getSession()
-        setSession(currentSession)
+        const { data: { session } } = await supabase.auth.getSession()
+        console.log('Session check:', session ? 'Found' : 'Not found')
+        
+        if (session?.user) {
+          console.log('User found:', session.user.email)
+        }
       } catch (error) {
-        console.error('Error getting session:', error)
+        console.error('Error checking session:', error)
       }
     }
 
-    getSession()
-
-    const {
-      data: { subscription },
-    } = supabase.auth.onAuthStateChange((_event, session) => {
-      setSession(session)
-    })
-
-    return () => subscription.unsubscribe()
+    initSession()
   }, [supabase.auth])
 
   useEffect(() => {
@@ -97,29 +104,48 @@ export default function ShareGroupClient({ id }: { id: string }) {
   }, [id, supabase])
 
   const handleAddToMyGroups = async () => {
-    if (!session?.user) {
-      // Redirect to login with the current share URL as the redirect URL
-      const redirectUrl = encodeURIComponent(window.location.href)
-      router.push(`/login?redirect_to=${redirectUrl}`)
-      return
+    if (!user) {
+      console.log('No user found in handleAddToMyGroups')
+      // Get current session to double check
+      const { data: { session } } = await supabase.auth.getSession()
+      if (!session?.user) {
+        // Redirect to login with the current share URL as the redirect URL
+        const redirectUrl = encodeURIComponent(window.location.href)
+        router.push(`/login?redirect_to=${redirectUrl}`)
+        return
+      }
     }
 
     setIsLoading(true)
     try {
-      // Verify session is still valid
-      const { data: { session: currentSession } } = await supabase.auth.getSession()
-      if (!currentSession) {
-        toast({
-          title: "Session Expired",
-          description: "Please sign in again to continue.",
-          variant: "destructive",
-        })
-        window.location.href = `/login?redirect_to=${encodeURIComponent(window.location.href)}`
-        return
+      if (!group) return;
+
+      // Create a copy of the group for the current user
+      const updatedGroup: Omit<GiftGroup, "id" | "user_id" | "created_at" | "updated_at"> = {
+        title: group.title,
+        occasion: group.occasion,
+        date: group.date,
+        price: group.price,
+        product_url: group.product_url,
+        product_image_url: group.product_image_url,
+        comments: group.comments,
+        participants: [], // Start with no participants when copying a group
+        color: group.color,
       }
 
-      const result = await copySharedGroup(id, session.user.id)
-      console.log('Copy result:', result)
+      await groupsService.createGroup(user!.id, updatedGroup, { skipNotifications: true })
+      
+      // If we came from a notification, mark it as read
+      if (isFromNotification && notificationId) {
+        const { error: updateError } = await supabase
+          .from('mailbox_notifications')
+          .update({ status: 'read' })
+          .eq('id', notificationId)
+
+        if (updateError) {
+          console.error('Error marking notification as read:', updateError)
+        }
+      }
       
       toast({
         title: "Success!",
@@ -133,6 +159,63 @@ export default function ShareGroupClient({ id }: { id: string }) {
       toast({
         title: "Error",
         description: "Failed to add group gift. Please try again.",
+        variant: "destructive",
+      })
+    } finally {
+      setIsLoading(false)
+    }
+  }
+
+  const handleAcceptInvitation = async () => {
+    if (!user || !notificationId) return;
+
+    setIsLoading(true)
+    try {
+      await groupsService.acceptGroupInvitation(notificationId)
+      
+      toast({
+        title: "Success!",
+        description: "Group gift has been added to your collection",
+      })
+
+      // Force a hard navigation to ensure session is maintained
+      window.location.href = '/groups'
+    } catch (error) {
+      console.error('Error accepting invitation:', error)
+      toast({
+        title: "Error",
+        description: "Failed to accept invitation. Please try again.",
+        variant: "destructive",
+      })
+    } finally {
+      setIsLoading(false)
+    }
+  }
+
+  const handleDeclineInvitation = async () => {
+    if (!user || !notificationId) return;
+
+    setIsLoading(true)
+    try {
+      // Mark notification as read/declined
+      const { error } = await supabase
+        .from('mailbox_notifications')
+        .update({ status: 'read' })
+        .eq('id', notificationId)
+
+      if (error) throw error;
+      
+      toast({
+        title: "Invitation Declined",
+        description: "You have declined the group gift invitation",
+      })
+
+      window.location.href = '/groups'
+    } catch (error) {
+      console.error('Error declining invitation:', error)
+      toast({
+        title: "Error",
+        description: "Failed to decline invitation. Please try again.",
         variant: "destructive",
       })
     } finally {
@@ -156,7 +239,7 @@ export default function ShareGroupClient({ id }: { id: string }) {
     )
   }
 
-  if (!group) {
+  if (!group || isSessionLoading) {
     return (
       <div className="container max-w-3xl py-8">
         <Card className="p-6">
@@ -178,8 +261,8 @@ export default function ShareGroupClient({ id }: { id: string }) {
 
   return (
     <div className="container max-w-3xl py-8 space-y-8">
-      {/* Auth Status Banner */}
-      {!session && (
+      {/* Auth Status Banner - Only show if not signed in and not loading */}
+      {!isSessionLoading && !user && !isFromNotification && (
         <Card className="p-6 bg-blue-50 border-blue-200">
           <div className="flex flex-col sm:flex-row items-center justify-between gap-4">
             <p className="text-blue-700">Sign in to add this group gift to your collection!</p>
@@ -191,6 +274,47 @@ export default function ShareGroupClient({ id }: { id: string }) {
                 <Button variant="outline">Sign Up</Button>
               </Link>
             </div>
+          </div>
+        </Card>
+      )}
+
+      {/* Notification Actions - Only show if from notification */}
+      {!isSessionLoading && user && isFromNotification && notificationId && (
+        <Card className="p-6 bg-blue-50 border-blue-200">
+          <div className="flex flex-col sm:flex-row items-center justify-between gap-4">
+            <p className="text-blue-700">Would you like to join this group gift?</p>
+            <div className="flex gap-2">
+              <Button
+                variant="outline"
+                onClick={handleDeclineInvitation}
+                disabled={isLoading}
+              >
+                {isLoading ? 'Declining...' : 'Decline'}
+              </Button>
+              <Button
+                variant="default"
+                onClick={handleAcceptInvitation}
+                disabled={isLoading}
+              >
+                {isLoading ? 'Accepting...' : 'Accept'}
+              </Button>
+            </div>
+          </div>
+        </Card>
+      )}
+
+      {/* Add to My Groups - Show when signed in but not from notification */}
+      {!isSessionLoading && user && !isFromNotification && (
+        <Card className="p-6 bg-blue-50 border-blue-200">
+          <div className="flex flex-col sm:flex-row items-center justify-between gap-4">
+            <p className="text-blue-700">Add this group gift to your collection?</p>
+            <Button
+              variant="default"
+              onClick={handleAddToMyGroups}
+              disabled={isLoading}
+            >
+              {isLoading ? "Adding..." : "Add to My Groups"}
+            </Button>
           </div>
         </Card>
       )}
@@ -299,20 +423,6 @@ export default function ShareGroupClient({ id }: { id: string }) {
               </WhatsappShareButton>
             </div>
           </div>
-
-          {/* Add to My Groups Button */}
-          {session && (
-            <div className="border-t pt-6">
-              <Button 
-                className="w-full" 
-                size="lg" 
-                onClick={handleAddToMyGroups}
-                disabled={isLoading}
-              >
-                {isLoading ? "Adding..." : "Add to My Groups"}
-              </Button>
-            </div>
-          )}
         </div>
       </Card>
     </div>

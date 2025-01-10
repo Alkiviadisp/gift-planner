@@ -324,4 +324,346 @@ create trigger handle_updated_at
 drop trigger if exists handle_updated_at on gifts;
 create trigger handle_updated_at
   before update on gifts
-  for each row execute procedure handle_updated_at(); 
+  for each row execute procedure handle_updated_at();
+
+-- Create mailbox_notifications table
+create table if not exists mailbox_notifications (
+  id uuid default uuid_generate_v4() primary key,
+  user_id uuid references auth.users on delete cascade not null,
+  title text not null,
+  message text not null,
+  type text check (type in ('info', 'warning', 'error', 'success')) default 'info',
+  status text check (status in ('active', 'read', 'archived')) default 'active',
+  priority text check (priority = 'low' or priority = 'medium' or priority = 'high') default 'medium',
+  category text not null,
+  requires_action boolean default false,
+  action_url text,
+  action_text text,
+  metadata jsonb default '{}'::jsonb,
+  created_at timestamp with time zone default timezone('utc'::text, now()) not null,
+  updated_at timestamp with time zone default timezone('utc'::text, now()) not null,
+  read_at timestamp with time zone,
+  archived_at timestamp with time zone
+);
+
+-- Create gift_invitations table
+create table if not exists gift_invitations (
+  id uuid default uuid_generate_v4() primary key,
+  group_id uuid references gift_groups on delete cascade not null,
+  inviter_id uuid references auth.users on delete cascade not null,
+  invitee_email text not null,
+  status text check (status in ('pending', 'accepted', 'declined')) default 'pending',
+  notification_id uuid references mailbox_notifications on delete set null,
+  created_at timestamp with time zone default timezone('utc'::text, now()) not null,
+  updated_at timestamp with time zone default timezone('utc'::text, now()) not null,
+  responded_at timestamp with time zone
+);
+
+-- Enable RLS for new tables
+alter table mailbox_notifications enable row level security;
+alter table gift_invitations enable row level security;
+
+-- Create policies for mailbox_notifications
+create policy "Users can view their own notifications"
+  on mailbox_notifications for select
+  using ( auth.uid() = user_id );
+
+create policy "Users can update their own notifications"
+  on mailbox_notifications for update
+  using ( auth.uid() = user_id );
+
+create policy "Users can create notifications"
+  on mailbox_notifications for insert
+  with check ( 
+    -- Allow users to create notifications for themselves
+    auth.uid() = user_id
+    -- Or allow creating notifications for users who are participants in their groups
+    or user_id in (
+      select p.id 
+      from profiles p
+      join gift_groups g on g.user_id = auth.uid()
+      where p.email = any(g.participants)
+    )
+  );
+
+-- Create policies for gift_invitations
+create policy "Users can view invitations they sent"
+  on gift_invitations for select
+  using ( auth.uid() = inviter_id );
+
+create policy "Users can view invitations sent to their email"
+  on gift_invitations for select
+  using ( 
+    invitee_email in (
+      select email from profiles where id = auth.uid()
+    )
+  );
+
+create policy "Users can create invitations for their groups"
+  on gift_invitations for insert
+  with check (
+    auth.uid() in (
+      select user_id from gift_groups where id = group_id
+    )
+  );
+
+create policy "Users can update invitations sent to their email"
+  on gift_invitations for update
+  using (
+    invitee_email in (
+      select email from profiles where id = auth.uid()
+    )
+  );
+
+-- Add updated_at triggers
+drop trigger if exists handle_updated_at on mailbox_notifications;
+create trigger handle_updated_at
+  before update on mailbox_notifications
+  for each row execute procedure handle_updated_at();
+
+drop trigger if exists handle_updated_at on gift_invitations;
+create trigger handle_updated_at
+  before update on gift_invitations
+  for each row execute procedure handle_updated_at();
+
+-- Create function to get unread notification count
+create or replace function get_unread_notification_count(p_user_id uuid)
+returns integer
+language plpgsql
+security definer
+as $$
+begin
+  return (
+    select count(*)
+    from mailbox_notifications
+    where user_id = p_user_id
+    and status = 'active'
+    and read_at is null
+  );
+end;
+$$;
+
+-- Create function to mark notification as read
+create or replace function mark_notification_read(p_notification_id uuid)
+returns void
+language plpgsql
+security definer
+as $$
+begin
+  update mailbox_notifications
+  set status = 'read',
+      read_at = now()
+  where id = p_notification_id
+  and auth.uid() = user_id;
+end;
+$$;
+
+-- Create function to archive notification
+create or replace function archive_notification(p_notification_id uuid)
+returns void
+language plpgsql
+security definer
+as $$
+begin
+  update mailbox_notifications
+  set status = 'archived',
+      archived_at = now()
+  where id = p_notification_id
+  and auth.uid() = user_id;
+end;
+$$;
+
+-- Create function to create a notification
+create or replace function create_notification(
+  p_user_id uuid,
+  p_title text,
+  p_message text,
+  p_category text,
+  p_type text default 'info',
+  p_status text default 'active',
+  p_priority text default 'medium',
+  p_requires_action boolean default false,
+  p_action_text text default null,
+  p_action_url text default null,
+  p_metadata jsonb default '{}'::jsonb
+)
+returns uuid
+language plpgsql
+security definer
+as $$
+declare
+  v_notification_id uuid;
+  v_priority text;
+begin
+  -- Normalize and validate priority
+  v_priority := trim(lower(coalesce(p_priority, 'medium')));
+  
+  -- Explicitly check and set priority
+  case v_priority
+    when 'low' then v_priority := 'low'
+    when 'medium' then v_priority := 'medium'
+    when 'high' then v_priority := 'high'
+    else v_priority := 'medium'
+  end case;
+
+  -- Validate type
+  if p_type not in ('info', 'warning', 'error', 'success') then
+    raise exception 'Invalid notification type: %', p_type;
+  end if;
+
+  -- Validate status
+  if p_status not in ('active', 'read', 'archived') then
+    raise exception 'Invalid notification status: %', p_status;
+  end if;
+
+  -- Insert the notification
+  insert into mailbox_notifications (
+    user_id,
+    title,
+    message,
+    category,
+    type,
+    status,
+    priority,
+    requires_action,
+    action_text,
+    action_url,
+    metadata
+  )
+  values (
+    p_user_id,
+    p_title,
+    p_message,
+    p_category,
+    p_type,
+    p_status,
+    v_priority,
+    p_requires_action,
+    p_action_text,
+    p_action_url,
+    p_metadata
+  )
+  returning id into v_notification_id;
+
+  return v_notification_id;
+end;
+$$;
+
+-- Create function to send notification to a specific user
+create or replace function send_user_notification(
+  admin_user_id uuid,
+  recipient_email text,
+  p_title text,
+  p_message text,
+  p_category text,
+  p_type text default 'info',
+  p_priority text default 'medium',
+  p_requires_action boolean default false,
+  p_action_text text default null,
+  p_action_url text default null,
+  p_metadata jsonb default '{}'::jsonb
+)
+returns uuid
+language plpgsql
+security definer
+as $$
+declare
+  v_recipient_id uuid;
+  v_notification_id uuid;
+  v_is_admin boolean;
+begin
+  -- Check if sender is admin
+  select exists (
+    select 1 from profiles
+    where id = admin_user_id
+    and subscription_tier = 'admin'
+  ) into v_is_admin;
+
+  if not v_is_admin then
+    raise exception 'Only administrators can send notifications';
+  end if;
+
+  -- Get recipient's user ID
+  select id into v_recipient_id
+  from profiles
+  where email = recipient_email;
+
+  if v_recipient_id is null then
+    raise exception 'Recipient not found';
+  end if;
+
+  -- Create notification
+  select create_notification(
+    v_recipient_id,
+    p_title,
+    p_message,
+    p_category,
+    p_type,
+    'active',
+    p_priority,
+    p_requires_action,
+    p_action_text,
+    jsonb_build_object(
+      'action_url', p_action_url,
+      'sent_by_admin', admin_user_id
+    ) || p_metadata
+  ) into v_notification_id;
+
+  return v_notification_id;
+end;
+$$;
+
+-- Create function to send broadcast notification to all users
+create or replace function send_broadcast_notification(
+  p_admin_id uuid,
+  p_title text,
+  p_message text,
+  p_category text,
+  p_type text default 'info',
+  p_priority text default 'medium',
+  p_requires_action boolean default false,
+  p_action_text text default null,
+  p_action_url text default null,
+  p_metadata jsonb default '{}'::jsonb
+)
+returns setof uuid
+language plpgsql
+security definer
+as $$
+declare
+  v_is_admin boolean;
+  v_user record;
+begin
+  -- Check if sender is admin
+  select exists (
+    select 1 from profiles
+    where id = p_admin_id
+    and subscription_tier = 'admin'
+  ) into v_is_admin;
+
+  if not v_is_admin then
+    raise exception 'Only administrators can send broadcast notifications';
+  end if;
+
+  -- Send notification to all users
+  for v_user in select id from profiles where id != p_admin_id
+  loop
+    return next create_notification(
+      v_user.id,
+      p_title,
+      p_message,
+      p_category,
+      p_type,
+      'active',
+      p_priority,
+      p_requires_action,
+      p_action_text,
+      jsonb_build_object(
+        'action_url', p_action_url,
+        'sent_by_admin', p_admin_id,
+        'is_broadcast', true
+      ) || p_metadata
+    );
+  end loop;
+end;
+$$; 

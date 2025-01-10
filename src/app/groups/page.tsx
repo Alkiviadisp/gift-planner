@@ -81,8 +81,10 @@ export default function GroupsPage() {
   }
 
   const handleDeleteGroup = async (groupId: string) => {
+    if (!user) return;
+    
     try {
-      await groupsService.deleteGroup(groupId)
+      await groupsService.deleteGroup(user.id, groupId)
       setGroups((prev) => prev.filter((group) => group.id !== groupId))
       toast({
         title: "Success",

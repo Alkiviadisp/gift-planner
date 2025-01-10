@@ -1,5 +1,6 @@
 import { supabase } from "@/lib/supabase/client"
 import { createClientComponentClient } from "@supabase/auth-helpers-nextjs"
+import { notificationService } from "@/lib/notifications/notification-service"
 
 export interface GiftGroup {
   id: string
@@ -17,230 +18,356 @@ export interface GiftGroup {
   updated_at: string
 }
 
-export async function copySharedGroup(groupId: string, userId: string) {
-  const supabase = createClientComponentClient()
-
-  try {
-    console.log('Copying group:', { groupId, userId })
-
-    // First get the group
-    const { data: group, error: getError } = await supabase
-      .from('gift_groups')
-      .select('*')
-      .eq('id', groupId)
-      .single()
-
-    if (getError) {
-      console.error('Error fetching group:', getError)
-      throw new Error(`Failed to get group: ${getError.message}`)
-    }
-
-    if (!group) {
-      throw new Error('Group not found')
-    }
-
-    console.log('Found group:', group)
-
-    // Create a new group for the user with a new Supabase client
-    const newSupabase = createClientComponentClient()
-    const { data: newGroup, error: insertError } = await newSupabase
-      .from('gift_groups')
-      .insert({
-        title: group.title,
-        occasion: group.occasion,
-        date: new Date(group.date).toISOString(),
-        price: group.price,
-        product_url: group.product_url,
-        product_image_url: group.product_image_url,
-        comments: group.comments,
-        participants: group.participants || [],
-        color: group.color,
-        user_id: userId
-      })
-      .select()
-      .single()
-
-    if (insertError) {
-      console.error('Error inserting new group:', insertError)
-      throw new Error(`Failed to copy group: ${insertError.message}`)
-    }
-
-    console.log('Created new group:', newGroup)
-    return {
-      ...newGroup,
-      date: new Date(newGroup.date),
-      participants: newGroup.participants || []
-    }
-  } catch (error) {
-    console.error('Error in copySharedGroup:', error)
-    throw error
-  }
-}
-
-export const groupsService = {
+class GroupsService {
   async getGroups(userId: string): Promise<GiftGroup[]> {
     const { data, error } = await supabase
       .from("gift_groups")
       .select("*")
       .eq("user_id", userId)
-      .order("created_at", { ascending: true })
+      .order("created_at", { ascending: false })
 
     if (error) {
       console.error("Database error in getGroups:", error)
       throw error
     }
 
-    return data.map((group: any) => ({
+    return data.map((group) => ({
       ...group,
       date: new Date(group.date),
-      participants: group.participants || []
     }))
-  },
+  }
+
+  private async sendParticipantNotification(
+    email: string,
+    groupId: string,
+    groupTitle: string,
+    inviterId: string
+  ) {
+    try {
+      console.log('=== START NOTIFICATION PROCESS ===');
+      console.log('Parameters:', { email, groupId, groupTitle, inviterId });
+      
+      // Get user profile directly by email
+      console.log('Looking up user profile by email...');
+      const { data: profiles, error: profileError } = await supabase
+        .from('profiles')
+        .select('id, email')
+        .eq('email', email)
+        .single();
+
+      if (profileError) {
+        if (profileError.code === 'PGRST116') { // No rows found
+          console.log('No user profile found for email:', email);
+          return; // User doesn't exist, do nothing
+        }
+        console.error('Error looking up user profile:', profileError);
+        throw profileError;
+      }
+
+      if (!profiles) {
+        console.log('No user found with email:', email);
+        return; // User doesn't exist, do nothing
+      }
+
+      console.log('Found user profile:', profiles);
+
+      // Call the create_notification function with required parameters first
+      const { data: notifData, error: notifError } = await supabase
+        .rpc('create_notification', {
+          p_user_id: profiles.id,
+          p_title: 'New Group Gift Invitation',
+          p_message: `You've been invited to join the group gift "${groupTitle}"`,
+          p_category: 'gift',
+          p_type: 'info',
+          p_status: 'active',
+          p_priority: 'medium',
+          p_requires_action: true,
+          p_action_text: 'View Group',
+          p_action_url: `/share/group/${groupId}`,
+          p_metadata: {
+            group_id: groupId,
+            inviter_id: inviterId
+          }
+        });
+
+      if (notifError) {
+        console.error('Error sending notification:', notifError);
+        throw notifError;
+      }
+
+      console.log('Successfully sent notification:', notifData);
+      console.log('=== END NOTIFICATION PROCESS ===');
+    } catch (error: any) {
+      console.error('Error in sendParticipantNotification:', error);
+      console.error('Full error details:', {
+        message: error.message,
+        details: error.details,
+        hint: error.hint,
+        code: error.code
+      });
+    }
+  }
 
   async createGroup(
     userId: string,
-    group: Omit<GiftGroup, "id" | "user_id" | "created_at" | "updated_at">
+    group: Omit<GiftGroup, "id" | "user_id" | "created_at" | "updated_at">,
+    options: { skipNotifications?: boolean } = {}
   ): Promise<GiftGroup> {
-    // Generate a random pastel color
-    const generatePastelColor = () => {
-      const hue = Math.floor(Math.random() * 360);
-      const saturation = 70 + Math.random() * 10; // 70-80%
-      const lightness = 85 + Math.random() * 10; // 85-95%
-      
-      // Convert HSL to Hex
-      const h = hue / 360;
-      const s = saturation / 100;
-      const l = lightness / 100;
+    try {
+      console.log('Creating group with data:', {
+        userId,
+        title: group.title,
+        participants: group.participants,
+        skipNotifications: options.skipNotifications
+      });
 
-      const a = s * Math.min(l, 1 - l);
-      const f = (n: number) => {
-        const k = (n + h * 12) % 12;
-        return l - a * Math.max(-1, Math.min(k - 3, 9 - k, 1));
-      };
-      
-      const toHex = (x: number) => {
-        const hex = Math.round(x * 255).toString(16);
-        return hex.length === 1 ? '0' + hex : hex;
-      };
+      // Create the group
+      const { data: newGroup, error: groupError } = await supabase
+        .from("gift_groups")
+        .insert([
+          {
+            user_id: userId,
+            title: group.title,
+            occasion: group.occasion,
+            date: group.date.toISOString(),
+            price: group.price,
+            product_url: group.product_url,
+            product_image_url: group.product_image_url,
+            comments: group.comments,
+            participants: group.participants,
+            color: group.color,
+          },
+        ])
+        .select()
+        .single()
 
-      const r = toHex(f(0));
-      const g = toHex(f(8));
-      const b = toHex(f(4));
+      if (groupError) {
+        console.error('Error creating group:', groupError);
+        throw groupError;
+      }
 
-      return `#${r}${g}${b}`;
-    };
+      console.log('Group created successfully:', newGroup);
 
-    const { data, error } = await supabase
-      .from("gift_groups")
-      .insert([
-        {
-          user_id: userId,
-          title: group.title,
-          occasion: group.occasion,
-          date: group.date.toISOString(),
-          price: group.price,
-          product_url: group.product_url,
-          product_image_url: group.product_image_url,
-          comments: group.comments,
-          participants: group.participants,
-          color: group.color || generatePastelColor(), // Use provided color or generate one
-        },
-      ])
-      .select()
-      .single()
+      // Send notifications to all participants if not skipped
+      if (!options.skipNotifications && group.participants.length > 0) {
+        console.log('Sending notifications to participants:', group.participants);
+        await Promise.all(
+          group.participants.map((email) =>
+            this.sendParticipantNotification(email, newGroup.id, group.title, userId)
+          )
+        )
+      } else {
+        console.log('Skipping notifications:', { 
+          skipNotifications: options.skipNotifications,
+          participantsCount: group.participants.length 
+        });
+      }
 
-    if (error) {
-      console.error("Database error in createGroup:", error)
+      return {
+        ...newGroup,
+        date: new Date(newGroup.date),
+      }
+    } catch (error) {
+      console.error("Error in createGroup:", error)
       throw error
     }
-
-    return {
-      ...data,
-      date: new Date(data.date),
-      participants: data.participants || []
-    }
-  },
-
-  async deleteGroup(groupId: string): Promise<void> {
-    const { error } = await supabase
-      .from("gift_groups")
-      .delete()
-      .eq("id", groupId)
-
-    if (error) {
-      console.error("Database error in deleteGroup:", error)
-      throw error
-    }
-  },
+  }
 
   async updateGroup(
     groupId: string,
-    group: Omit<GiftGroup, "id" | "user_id" | "created_at" | "updated_at">
+    updates: Omit<GiftGroup, "id" | "user_id" | "created_at" | "updated_at">
   ): Promise<GiftGroup> {
+    try {
+      console.log('=== START GROUP UPDATE PROCESS ===');
+      
+      // Get current group data to compare participants
+      const currentGroup = await this.getGroupById(groupId);
+      if (!currentGroup) {
+        throw new Error("Group not found");
+      }
+      console.log('Current group:', currentGroup);
+
+      // Get the user ID for sending notifications
+      const { data: { user }, error: userError } = await supabase.auth.getUser();
+      if (userError) throw userError;
+      if (!user) throw new Error("No authenticated user");
+      console.log('Current user:', user);
+
+      // Find new participants before updating the group
+      console.log('Current participants:', currentGroup.participants);
+      console.log('Updated participants:', updates.participants);
+      
+      const currentEmails = new Set(currentGroup.participants || []);
+      const newParticipants = updates.participants.filter(
+        (email) => !currentEmails.has(email)
+      );
+      console.log('New participants to notify:', newParticipants);
+
+      // Update the group
+      const { data: updatedGroup, error: updateError } = await supabase
+        .from("gift_groups")
+        .update({
+          title: updates.title,
+          occasion: updates.occasion,
+          date: updates.date.toISOString(),
+          price: updates.price,
+          product_url: updates.product_url,
+          product_image_url: updates.product_image_url,
+          comments: updates.comments,
+          participants: updates.participants,
+          color: updates.color,
+        })
+        .eq("id", groupId)
+        .select()
+        .single();
+
+      if (updateError) {
+        console.error('Error updating group:', updateError);
+        throw updateError;
+      }
+      console.log('Group updated successfully:', updatedGroup);
+
+      // Send notifications to new participants
+      if (newParticipants.length > 0) {
+        console.log('Sending notifications to new participants:', newParticipants);
+        const notificationPromises = newParticipants.map(async (email) => {
+          try {
+            await this.sendParticipantNotification(
+              email,
+              groupId,
+              updates.title,
+              user.id
+            );
+            console.log(`Notification sent successfully to ${email}`);
+          } catch (error) {
+            console.error(`Error sending notification to ${email}:`, error);
+          }
+        });
+
+        await Promise.all(notificationPromises);
+        console.log('All notifications sent');
+      } else {
+        console.log('No new participants to notify');
+      }
+
+      console.log('=== END GROUP UPDATE PROCESS ===');
+
+      return {
+        ...updatedGroup,
+        date: new Date(updatedGroup.date),
+      };
+    } catch (error) {
+      console.error("Error in updateGroup:", error);
+      throw error;
+    }
+  }
+
+  async deleteGroup(userId: string, groupId: string): Promise<void> {
+    try {
+      console.log('Attempting to delete group:', { userId, groupId });
+
+      // Validate parameters
+      if (!userId || !groupId) {
+        throw new Error(`Invalid parameters: userId=${userId}, groupId=${groupId}`);
+      }
+
+      const { error } = await supabase
+        .from("gift_groups")
+        .delete()
+        .eq("user_id", userId)
+        .eq("id", groupId)
+
+      if (error) {
+        console.error("Database error in deleteGroup:", error);
+        throw error;
+      }
+
+      console.log('Successfully deleted group:', groupId);
+    } catch (error) {
+      console.error("Error in deleteGroup:", error);
+      throw error;
+    }
+  }
+
+  async getGroupById(groupId: string): Promise<GiftGroup | null> {
     const { data, error } = await supabase
       .from("gift_groups")
-      .update({
-        title: group.title,
-        occasion: group.occasion,
-        date: group.date.toISOString(),
-        price: group.price,
-        product_url: group.product_url,
-        product_image_url: group.product_image_url,
-        comments: group.comments,
-        participants: group.participants,
-      })
+      .select("*")
       .eq("id", groupId)
-      .select()
       .single()
 
     if (error) {
-      console.error("Database error in updateGroup:", error)
+      if (error.code === "PGRST116") return null // No rows returned
+      console.error("Database error in getGroupById:", error)
       throw error
     }
 
     return {
       ...data,
       date: new Date(data.date),
-      participants: data.participants || []
     }
-  },
-
-  async copySharedGroup(groupId: string, userId: string) {
-    const supabase = createClientComponentClient()
-
-    // First get the group
-    const { data: group, error: getError } = await supabase
-      .from('gift_groups')
-      .select('*')
-      .eq('id', groupId)
-      .single()
-
-    if (getError || !group) {
-      throw new Error('Failed to get group')
-    }
-
-    // Create a new group for the user
-    const { data: newGroup, error: insertError } = await supabase
-      .from('gift_groups')
-      .insert({
-        title: group.title,
-        occasion: group.occasion,
-        date: group.date,
-        price: group.price,
-        product_url: group.product_url,
-        product_image_url: group.product_image_url,
-        comments: group.comments,
-        participants: group.participants,
-        color: group.color,
-        user_id: userId
-      })
-      .select()
-      .single()
-
-    if (insertError) {
-      throw new Error('Failed to copy group')
-    }
-
-    return newGroup
   }
-} 
+
+  async acceptGroupInvitation(notificationId: string): Promise<void> {
+    try {
+      // Get the notification details
+      const { data: notification, error: notifError } = await supabase
+        .from('mailbox_notifications')
+        .select('*')
+        .eq('id', notificationId)
+        .single();
+
+      if (notifError) {
+        console.error('Error fetching notification:', notifError);
+        throw notifError;
+      }
+
+      if (!notification || !notification.metadata?.group_id) {
+        throw new Error('Invalid notification or missing group ID');
+      }
+
+      // Get the original group details
+      const originalGroup = await this.getGroupById(notification.metadata.group_id);
+      if (!originalGroup) {
+        throw new Error('Original group not found');
+      }
+
+      // Create a new group for the receiver
+      const { data: newGroup, error: groupError } = await supabase
+        .from('gift_groups')
+        .insert([{
+          user_id: notification.user_id,
+          title: originalGroup.title,
+          occasion: originalGroup.occasion,
+          date: originalGroup.date,
+          price: originalGroup.price,
+          product_url: originalGroup.product_url,
+          product_image_url: originalGroup.product_image_url,
+          comments: originalGroup.comments,
+          participants: originalGroup.participants,
+          color: originalGroup.color,
+        }])
+        .select()
+        .single();
+
+      if (groupError) {
+        console.error('Error creating group copy:', groupError);
+        throw groupError;
+      }
+
+      // Mark notification as read using the notification service
+      await notificationService.markAsRead(notificationId);
+
+      console.log('Successfully accepted group invitation:', {
+        notificationId,
+        originalGroupId: notification.metadata.group_id,
+        newGroupId: newGroup.id
+      });
+    } catch (error) {
+      console.error('Error in acceptGroupInvitation:', error);
+      throw error;
+    }
+  }
+}
+
+export const groupsService = new GroupsService() 
