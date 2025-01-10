@@ -45,10 +45,10 @@ class GroupsService {
   ) {
     try {
       console.log('=== START NOTIFICATION PROCESS ===');
-      console.log('Parameters:', { email, groupId, groupTitle, inviterId });
+      console.log('Attempting to send notification for group:', groupId);
       
       // Get user profile directly by email
-      console.log('Looking up user profile by email...');
+      console.log('Looking up user profile...');
       const { data: profiles, error: profileError } = await supabase
         .from('profiles')
         .select('id, email')
@@ -57,19 +57,19 @@ class GroupsService {
 
       if (profileError) {
         if (profileError.code === 'PGRST116') { // No rows found
-          console.log('No user profile found for email:', email);
+          console.log('No matching user profile found');
           return; // User doesn't exist, do nothing
         }
-        console.error('Error looking up user profile:', profileError);
+        console.error('Error looking up user profile');
         throw profileError;
       }
 
       if (!profiles) {
-        console.log('No user found with email:', email);
+        console.log('No matching user found');
         return; // User doesn't exist, do nothing
       }
 
-      console.log('Found user profile:', profiles);
+      console.log('User profile found');
 
       // Call the create_notification function with required parameters first
       const { data: notifData, error: notifError } = await supabase
@@ -91,18 +91,15 @@ class GroupsService {
         });
 
       if (notifError) {
-        console.error('Error sending notification:', notifError);
+        console.error('Error sending notification');
         throw notifError;
       }
 
-      console.log('Successfully sent notification:', notifData);
+      console.log('Successfully sent notification');
       console.log('=== END NOTIFICATION PROCESS ===');
     } catch (error: any) {
-      console.error('Error in sendParticipantNotification:', error);
-      console.error('Full error details:', {
-        message: error.message,
-        details: error.details,
-        hint: error.hint,
+      console.error('Error in sendParticipantNotification');
+      console.error('Error details:', {
         code: error.code
       });
     }
@@ -114,12 +111,7 @@ class GroupsService {
     options: { skipNotifications?: boolean } = {}
   ): Promise<GiftGroup> {
     try {
-      console.log('Creating group with data:', {
-        userId,
-        title: group.title,
-        participants: group.participants,
-        skipNotifications: options.skipNotifications
-      });
+      console.log('Creating new group gift');
 
       // Create the group
       const { data: newGroup, error: groupError } = await supabase
@@ -142,15 +134,15 @@ class GroupsService {
         .single()
 
       if (groupError) {
-        console.error('Error creating group:', groupError);
+        console.error('Error creating group');
         throw groupError;
       }
 
-      console.log('Group created successfully:', newGroup);
+      console.log('Group created successfully');
 
       // Send notifications to all participants if not skipped
       if (!options.skipNotifications && group.participants.length > 0) {
-        console.log('Sending notifications to participants:', group.participants);
+        console.log(`Sending notifications to ${group.participants.length} participants`);
         await Promise.all(
           group.participants.map((email) =>
             this.sendParticipantNotification(email, newGroup.id, group.title, userId)
@@ -168,7 +160,7 @@ class GroupsService {
         date: new Date(newGroup.date),
       }
     } catch (error) {
-      console.error("Error in createGroup:", error)
+      console.error("Error in createGroup")
       throw error
     }
   }
@@ -180,28 +172,18 @@ class GroupsService {
     try {
       console.log('=== START GROUP UPDATE PROCESS ===');
       
-      // Get current group data to compare participants
+      // Get current group data
       const currentGroup = await this.getGroupById(groupId);
       if (!currentGroup) {
         throw new Error("Group not found");
       }
-      console.log('Current group:', currentGroup);
+      console.log('Found existing group');
 
       // Get the user ID for sending notifications
       const { data: { user }, error: userError } = await supabase.auth.getUser();
       if (userError) throw userError;
       if (!user) throw new Error("No authenticated user");
-      console.log('Current user:', user);
-
-      // Find new participants before updating the group
-      console.log('Current participants:', currentGroup.participants);
-      console.log('Updated participants:', updates.participants);
-      
-      const currentEmails = new Set(currentGroup.participants || []);
-      const newParticipants = updates.participants.filter(
-        (email) => !currentEmails.has(email)
-      );
-      console.log('New participants to notify:', newParticipants);
+      console.log('User authenticated');
 
       // Update the group
       const { data: updatedGroup, error: updateError } = await supabase
@@ -222,15 +204,16 @@ class GroupsService {
         .single();
 
       if (updateError) {
-        console.error('Error updating group:', updateError);
+        console.error('Error updating group');
         throw updateError;
       }
-      console.log('Group updated successfully:', updatedGroup);
+      console.log('Group updated successfully');
 
-      // Send notifications to new participants
-      if (newParticipants.length > 0) {
-        console.log('Sending notifications to new participants:', newParticipants);
-        const notificationPromises = newParticipants.map(async (email) => {
+      // Send notifications to all participants in the updates.participants array
+      // This will send notifications even if they were previously added
+      if (updates.participants.length > 0) {
+        console.log(`Sending notifications to ${updates.participants.length} participants`);
+        const notificationPromises = updates.participants.map(async (email) => {
           try {
             await this.sendParticipantNotification(
               email,
@@ -238,16 +221,16 @@ class GroupsService {
               updates.title,
               user.id
             );
-            console.log(`Notification sent successfully to ${email}`);
+            console.log('Notification sent successfully');
           } catch (error) {
-            console.error(`Error sending notification to ${email}:`, error);
+            console.error('Error sending notification');
           }
         });
 
         await Promise.all(notificationPromises);
         console.log('All notifications sent');
       } else {
-        console.log('No new participants to notify');
+        console.log('No participants to notify');
       }
 
       console.log('=== END GROUP UPDATE PROCESS ===');
@@ -257,7 +240,7 @@ class GroupsService {
         date: new Date(updatedGroup.date),
       };
     } catch (error) {
-      console.error("Error in updateGroup:", error);
+      console.error("Error in updateGroup");
       throw error;
     }
   }

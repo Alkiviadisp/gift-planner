@@ -12,8 +12,8 @@ import { useToast } from "@/components/ui/use-toast"
 import { ChevronLeft, ChevronRight, Plus, X, ExternalLink } from "lucide-react"
 import { Textarea } from "@/components/ui/textarea"
 import type { GiftGroup } from "@/lib/groups/groups-service"
-import { PASTEL_COLORS } from "@/lib/categories/categories-service"
 import { cn } from "@/lib/utils"
+import { PASTEL_COLORS } from "@/lib/categories/categories-service"
 
 interface CreateGroupDialogProps {
   open: boolean
@@ -119,22 +119,6 @@ export function CreateGroupDialog({
     return emailRegex.test(email)
   }
 
-  const handleProductUrlChange = (url: string) => {
-    setProductUrl(url);
-    if (!url.trim()) {
-      setProductImageUrl("");
-    }
-  };
-
-  const isValidUrl = (urlString: string): boolean => {
-    try {
-      new URL(urlString);
-      return true;
-    } catch (err) {
-      return false;
-    }
-  };
-
   const handleAddParticipant = () => {
     const email = currentParticipant.trim()
     if (!email) return
@@ -151,17 +135,26 @@ export function CreateGroupDialog({
 
     setIsValidEmail(true)
     if (!participants.includes(email)) {
-      setParticipants((prev) => [...prev, email])
+      setParticipants([...participants, email])
     }
     setCurrentParticipant("")
   }
 
-  const handleKeyDown = (e: React.KeyboardEvent) => {
-    if (e.key === 'Enter') {
-      e.preventDefault()
-      handleAddParticipant()
+  const handleProductUrlChange = (url: string) => {
+    setProductUrl(url);
+    if (!url.trim()) {
+      setProductImageUrl("");
     }
-  }
+  };
+
+  const isValidUrl = (urlString: string): boolean => {
+    try {
+      new URL(urlString);
+      return true;
+    } catch (err) {
+      return false;
+    }
+  };
 
   const handleRemoveParticipant = (index: number) => {
     setParticipants(participants.filter((_, i) => i !== index))
@@ -435,6 +428,9 @@ export function CreateGroupDialog({
 
           <div className="space-y-1.5">
             <Label>Participants (Email Addresses)</Label>
+            <p className="text-sm text-muted-foreground mb-2">
+              Notifications will only be sent to registered users. Non-registered users will need to sign up to receive notifications.
+            </p>
             <div className="flex gap-2">
               <Input
                 value={currentParticipant}
@@ -442,8 +438,13 @@ export function CreateGroupDialog({
                   setCurrentParticipant(e.target.value)
                   setIsValidEmail(true)
                 }}
-                onKeyDown={handleKeyDown}
                 placeholder="Enter email address"
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter') {
+                    e.preventDefault()
+                    handleAddParticipant()
+                  }
+                }}
                 className={cn(
                   "flex-1",
                   !isValidEmail && "border-red-500 focus-visible:ring-red-500"
