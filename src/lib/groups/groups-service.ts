@@ -1,10 +1,22 @@
 import { supabase } from "@/lib/supabase/client"
 import { createClientComponentClient } from "@supabase/auth-helpers-nextjs"
 import { notificationService } from "@/lib/notifications/notification-service"
+import { PASTEL_COLORS } from "@/lib/categories/categories-service"
+
+// Helper function to get a random pastel color
+const getRandomPastelColor = (): string => {
+  const randomIndex = Math.floor(Math.random() * PASTEL_COLORS.length)
+  return PASTEL_COLORS[randomIndex]!
+}
 
 export interface GiftGroup {
   id: string
   user_id: string
+  name: string
+  description: string
+  amount: number
+  currency: string
+  image_url?: string
   title: string
   occasion: string
   date: Date
@@ -18,23 +30,72 @@ export interface GiftGroup {
   updated_at: string
 }
 
-class GroupsService {
+interface CreateGroupInput {
+  name: string
+  description: string
+  amount: number
+  currency: string
+  imageUrl: string | null
+  participants?: Array<{ email: string; participation_status?: string }>
+  date?: Date
+}
+
+interface UpdateGroupInput {
+  name: string
+  description: string
+  amount: number
+  currency: string
+  imageUrl: string | null
+  participants?: string[]
+}
+
+export class GroupsService {
   async getGroups(userId: string): Promise<GiftGroup[]> {
-    const { data, error } = await supabase
+    // First get all groups
+    const { data: groups, error } = await supabase
       .from("gift_groups")
-      .select("*")
+      .select(`
+        *,
+        group_participants (
+          id,
+          email,
+          participation_status
+        )
+      `)
       .eq("user_id", userId)
-      .order("created_at", { ascending: false })
+      .order("created_at", { ascending: false });
 
     if (error) {
-      console.error("Database error in getGroups:", error)
-      throw error
+      console.error("Database error in getGroups:", error);
+      throw error;
     }
 
-    return data.map((group) => ({
-      ...group,
-      date: new Date(group.date),
-    }))
+    // Get the user's email
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user?.email) throw new Error('User email not found');
+
+    return groups.map((group) => {
+      // Get all participant emails from group_participants
+      const participantEmails = group.group_participants?.map((p: any) => p.email) || [];
+      
+      // Add creator's email if not already in the list
+      if (!participantEmails.includes(user.email)) {
+        participantEmails.push(user.email);
+      }
+
+      return {
+        ...group,
+        // Map new fields to old fields for backward compatibility
+        title: group.name || group.title,
+        occasion: group.description || group.occasion,
+        price: group.amount || group.price,
+        product_image_url: group.image_url || group.product_image_url,
+        // Convert date string to Date object
+        date: new Date(group.date),
+        // Set participants array including creator
+        participants: participantEmails
+      };
+    });
   }
 
   private async sendParticipantNotification(
@@ -105,143 +166,186 @@ class GroupsService {
     }
   }
 
-  async createGroup(
-    userId: string,
-    group: Omit<GiftGroup, "id" | "user_id" | "created_at" | "updated_at">,
-    options: { skipNotifications?: boolean } = {}
-  ): Promise<GiftGroup> {
-    try {
-      console.log('Creating new group gift');
+  async createGroup(group: CreateGroupInput): Promise<string> {
+    // Get current user
+    const { data: { user }, error: userError } = await supabase.auth.getUser();
+    if (userError) throw userError;
+    if (!user) throw new Error('No authenticated user');
+    if (!user.email) throw new Error('User email not found');
 
-      // Create the group
-      const { data: newGroup, error: groupError } = await supabase
-        .from("gift_groups")
-        .insert([
-          {
-            user_id: userId,
-            title: group.title,
-            occasion: group.occasion,
-            date: group.date.toISOString(),
-            price: group.price,
-            product_url: group.product_url,
-            product_image_url: group.product_image_url,
-            comments: group.comments,
-            participants: group.participants,
-            color: group.color,
-          },
-        ])
-        .select()
-        .single()
-
-      if (groupError) {
-        console.error('Error creating group');
-        throw groupError;
-      }
-
-      console.log('Group created successfully');
-
-      // Send notifications to all participants if not skipped
-      if (!options.skipNotifications && group.participants.length > 0) {
-        console.log(`Sending notifications to ${group.participants.length} participants`);
-        await Promise.all(
-          group.participants.map((email) =>
-            this.sendParticipantNotification(email, newGroup.id, group.title, userId)
-          )
-        )
-      } else {
-        console.log('Skipping notifications:', { 
-          skipNotifications: options.skipNotifications,
-          participantsCount: group.participants.length 
-        });
-      }
-
-      return {
-        ...newGroup,
-        date: new Date(newGroup.date),
-      }
-    } catch (error) {
-      console.error("Error in createGroup")
-      throw error
+    // Validate required fields
+    if (!group.name || !group.description || !group.amount || !group.currency) {
+      throw new Error('Missing required fields');
     }
+
+    // Include both old and new field names
+    const groupData = {
+      // New fields
+      name: group.name,
+      description: group.description,
+      amount: group.amount,
+      currency: group.currency,
+      image_url: group.imageUrl,
+      user_id: user.id,
+      // Old fields (required until migration is complete)
+      title: group.name,
+      occasion: group.description,
+      price: group.amount,
+      product_image_url: group.imageUrl,
+      date: group.date ? group.date.toISOString() : new Date().toISOString(),
+      color: getRandomPastelColor(), // Use a random pastel color
+    };
+
+    console.log('Creating group with data:', groupData);
+
+    const { data: newGroup, error: createError } = await supabase
+      .from('gift_groups')
+      .insert(groupData)
+      .select()
+      .single();
+
+    if (createError) {
+      console.error('Error creating group:', createError);
+      throw createError;
+    }
+
+    // Create a list of all participants with their statuses
+    const allParticipants = [
+      // Add creator with agreed status
+      { email: user.email, participation_status: 'agreed' },
+      // Add other participants with their statuses
+      ...(group.participants || [])
+    ];
+
+    if (allParticipants.length > 0) {
+      // Get user profiles for the participants
+      const { data: profiles } = await supabase
+        .from('profiles')
+        .select('id, email')
+        .in('email', allParticipants.map(p => p.email));
+
+      // Create a map of email to user_id
+      const emailToUserId = new Map(profiles?.map(p => [p.email, p.id]) || []);
+
+      // Calculate initial contribution amount per participant
+      const initialContributionAmount = group.amount / allParticipants.length;
+
+      // Create participant entries
+      const participants = allParticipants
+        .filter(p => p.email) // Ensure no null emails
+        .map(p => ({
+          group_id: newGroup.id,
+          user_id: emailToUserId.get(p.email) || null,
+          email: p.email,
+          participation_status: p.participation_status || 'pending',
+          contribution_amount: initialContributionAmount
+        }));
+
+      const { error: participantError } = await supabase
+        .from('group_participants')
+        .insert(participants);
+
+      if (participantError) {
+        console.error('Error adding participants:', participantError);
+        throw participantError;
+      }
+
+      // Send notifications to participants (except the creator)
+      for (const participant of participants) {
+        if (participant.email !== user.email) {
+          await this.sendParticipantNotification(
+            participant.email,
+            newGroup.id,
+            newGroup.name,
+            user.id
+          );
+        }
+      }
+    }
+
+    return newGroup.id;
   }
 
-  async updateGroup(
-    groupId: string,
-    updates: Omit<GiftGroup, "id" | "user_id" | "created_at" | "updated_at">
-  ): Promise<GiftGroup> {
-    try {
-      console.log('=== START GROUP UPDATE PROCESS ===');
-      
-      // Get current group data
-      const currentGroup = await this.getGroupById(groupId);
-      if (!currentGroup) {
-        throw new Error("Group not found");
-      }
-      console.log('Found existing group');
+  async updateGroup(groupId: string, updates: UpdateGroupInput): Promise<void> {
+    const { error: updateError } = await supabase
+      .from('gift_groups')
+      .update({
+        name: updates.name,
+        description: updates.description,
+        amount: updates.amount,
+        currency: updates.currency,
+        image_url: updates.imageUrl
+      })
+      .eq('id', groupId)
 
-      // Get the user ID for sending notifications
-      const { data: { user }, error: userError } = await supabase.auth.getUser();
-      if (userError) throw userError;
-      if (!user) throw new Error("No authenticated user");
-      console.log('User authenticated');
+    if (updateError) throw updateError
 
-      // Update the group
-      const { data: updatedGroup, error: updateError } = await supabase
-        .from("gift_groups")
-        .update({
-          title: updates.title,
-          occasion: updates.occasion,
-          date: updates.date.toISOString(),
-          price: updates.price,
-          product_url: updates.product_url,
-          product_image_url: updates.product_image_url,
-          comments: updates.comments,
-          participants: updates.participants,
-          color: updates.color,
-        })
-        .eq("id", groupId)
-        .select()
-        .single();
+    if (updates.participants) {
+      // Get current participants
+      const { data: currentParticipants } = await supabase
+        .from('group_participants')
+        .select('email')
+        .eq('group_id', groupId)
 
-      if (updateError) {
-        console.error('Error updating group');
-        throw updateError;
-      }
-      console.log('Group updated successfully');
+      const currentEmails = new Set(currentParticipants?.map(p => p.email) || [])
+      const newEmails = new Set(updates.participants)
 
-      // Send notifications to all participants in the updates.participants array
-      // This will send notifications even if they were previously added
-      if (updates.participants.length > 0) {
-        console.log(`Sending notifications to ${updates.participants.length} participants`);
-        const notificationPromises = updates.participants.map(async (email) => {
-          try {
-            await this.sendParticipantNotification(
-              email,
-              groupId,
-              updates.title,
-              user.id
-            );
-            console.log('Notification sent successfully');
-          } catch (error) {
-            console.error('Error sending notification');
-          }
-        });
+      // Add new participants
+      const newParticipants = updates.participants
+        .filter((email: string) => !currentEmails.has(email))
+        .map((email: string) => ({
+          group_id: groupId,
+          email,
+          participation_status: 'pending',
+          contribution_amount: 0
+        }))
 
-        await Promise.all(notificationPromises);
-        console.log('All notifications sent');
-      } else {
-        console.log('No participants to notify');
+      if (newParticipants.length > 0) {
+        const { error: participantError } = await supabase
+          .from('group_participants')
+          .insert(newParticipants)
+
+        if (participantError) throw participantError
+
+        // Get the group name and user ID for notifications
+        const { data: group, error: groupError } = await supabase
+          .from('gift_groups')
+          .select('name, user_id')
+          .eq('id', groupId)
+          .single()
+
+        if (groupError) throw groupError
+        if (!group) throw new Error('Group not found')
+
+        // Send notifications to new participants
+        for (const participant of newParticipants) {
+          await this.sendParticipantNotification(
+            participant.email,
+            groupId,
+            group.name,
+            group.user_id
+          )
+        }
       }
 
-      console.log('=== END GROUP UPDATE PROCESS ===');
+      // Remove participants that are no longer in the list
+      const removedEmails = Array.from(currentEmails)
+        .filter(email => !newEmails.has(email))
 
-      return {
-        ...updatedGroup,
-        date: new Date(updatedGroup.date),
-      };
-    } catch (error) {
-      console.error("Error in updateGroup");
-      throw error;
+      if (removedEmails.length > 0) {
+        const { error: deleteError } = await supabase
+          .from('group_participants')
+          .delete()
+          .eq('group_id', groupId)
+          .in('email', removedEmails)
+
+        if (deleteError) throw deleteError
+      }
+
+      // Recalculate contribution amounts
+      await supabase.rpc('calculate_group_contributions', {
+        p_group_id: groupId
+      })
     }
   }
 
@@ -275,23 +379,54 @@ class GroupsService {
   async getGroupById(groupId: string): Promise<GiftGroup | null> {
     const { data, error } = await supabase
       .from("gift_groups")
-      .select("*")
+      .select(`
+        *,
+        group_participants (
+          id,
+          email,
+          participation_status
+        )
+      `)
       .eq("id", groupId)
-      .single()
+      .single();
 
     if (error) {
-      if (error.code === "PGRST116") return null // No rows returned
-      console.error("Database error in getGroupById:", error)
-      throw error
+      if (error.code === "PGRST116") return null; // No rows returned
+      console.error("Database error in getGroupById:", error);
+      throw error;
+    }
+
+    // Get the creator's email from the user profile
+    const { data: creatorProfile } = await supabase
+      .from('profiles')
+      .select('email')
+      .eq('id', data.user_id)
+      .single();
+
+    // Get all participant emails from group_participants
+    const participantEmails = data.group_participants?.map((p: any) => p.email) || [];
+    
+    // Add creator's email if not already in the list
+    if (creatorProfile?.email && !participantEmails.includes(creatorProfile.email)) {
+      participantEmails.push(creatorProfile.email);
     }
 
     return {
       ...data,
+      // Map new fields to old fields for backward compatibility
+      title: data.name || data.title,
+      occasion: data.description || data.occasion,
+      price: data.amount || data.price,
+      product_image_url: data.image_url || data.product_image_url,
+      // Convert date string to Date object
       date: new Date(data.date),
-    }
+      // Set participants array including creator
+      participants: participantEmails
+    };
   }
 
   async acceptGroupInvitation(notificationId: string): Promise<void> {
+    const supabase = createClientComponentClient()
     try {
       // Get the notification details
       const { data: notification, error: notifError } = await supabase
@@ -315,20 +450,40 @@ class GroupsService {
         throw new Error('Original group not found');
       }
 
+      // Get the user's email
+      const { data: { user }, error: userError } = await supabase.auth.getUser();
+      if (userError) throw userError;
+      if (!user?.email) throw new Error('User email not found');
+
+      // Get the original creator's email
+      const { data: creatorProfile } = await supabase
+        .from('profiles')
+        .select('email')
+        .eq('id', originalGroup.user_id)
+        .single();
+
+      if (!creatorProfile?.email) {
+        throw new Error('Original creator email not found');
+      }
+
       // Create a new group for the receiver
       const { data: newGroup, error: groupError } = await supabase
         .from('gift_groups')
         .insert([{
           user_id: notification.user_id,
+          name: originalGroup.title,
+          description: originalGroup.occasion,
+          amount: originalGroup.price,
+          currency: originalGroup.currency || 'EUR',
+          image_url: originalGroup.product_image_url,
+          date: originalGroup.date,
+          color: originalGroup.color,
+          participants: originalGroup.participants,
+          // Add new fields for backward compatibility
           title: originalGroup.title,
           occasion: originalGroup.occasion,
-          date: originalGroup.date,
           price: originalGroup.price,
-          product_url: originalGroup.product_url,
           product_image_url: originalGroup.product_image_url,
-          comments: originalGroup.comments,
-          participants: originalGroup.participants,
-          color: originalGroup.color,
         }])
         .select()
         .single();
@@ -336,6 +491,53 @@ class GroupsService {
       if (groupError) {
         console.error('Error creating group copy:', groupError);
         throw groupError;
+      }
+
+      // Get all participants from the original group
+      const { data: originalParticipants, error: participantsError } = await supabase
+        .from('group_participants')
+        .select('*')
+        .eq('group_id', notification.metadata.group_id);
+
+      if (participantsError) {
+        console.error('Error fetching original participants:', participantsError);
+        throw participantsError;
+      }
+
+      // Create a list of all participants including the new owner and original creator
+      const allParticipants = [...new Set([
+        ...originalParticipants.map(p => p.email),
+        user.email,
+        creatorProfile.email // Add original creator
+      ])];
+
+      // Get user profiles for the participants
+      const { data: profiles } = await supabase
+        .from('profiles')
+        .select('id, email')
+        .in('email', allParticipants);
+
+      const emailToUserId = new Map(profiles?.map(p => [p.email, p.id]) || []);
+
+      // Calculate initial contribution amount
+      const initialContributionAmount = originalGroup.price / allParticipants.length;
+
+      // Create participant entries for the new group
+      const newParticipants = allParticipants.map(email => ({
+        group_id: newGroup.id,
+        user_id: emailToUserId.get(email) || null,
+        email,
+        participation_status: email === user.email ? 'agreed' : 'pending', // New owner is automatically agreed
+        contribution_amount: initialContributionAmount
+      }));
+
+      const { error: insertError } = await supabase
+        .from('group_participants')
+        .insert(newParticipants);
+
+      if (insertError) {
+        console.error('Error adding participants to new group:', insertError);
+        throw insertError;
       }
 
       // Mark notification as read using the notification service
@@ -351,6 +553,117 @@ class GroupsService {
       throw error;
     }
   }
+
+  async copySharedGroup(groupId: string, userId: string): Promise<string> {
+    const supabase = createClientComponentClient()
+    try {
+      // Get the original group details
+      const originalGroup = await this.getGroupById(groupId);
+      if (!originalGroup) {
+        throw new Error('Original group not found');
+      }
+
+      // Get the user's email
+      const { data: { user }, error: userError } = await supabase.auth.getUser();
+      if (userError) throw userError;
+      if (!user?.email) throw new Error('User email not found');
+
+      // Get the original creator's email
+      const { data: creatorProfile } = await supabase
+        .from('profiles')
+        .select('email')
+        .eq('id', originalGroup.user_id)
+        .single();
+
+      if (!creatorProfile?.email) {
+        throw new Error('Original creator email not found');
+      }
+
+      // Create a new group for the user
+      const { data: newGroup, error: groupError } = await supabase
+        .from('gift_groups')
+        .insert([{
+          user_id: userId,
+          name: originalGroup.title,
+          description: originalGroup.occasion,
+          amount: originalGroup.price,
+          currency: originalGroup.currency || 'EUR',
+          image_url: originalGroup.product_image_url,
+          date: originalGroup.date,
+          color: originalGroup.color,
+          // New fields
+          title: originalGroup.title,
+          occasion: originalGroup.occasion,
+          price: originalGroup.price,
+          product_image_url: originalGroup.product_image_url,
+          participants: originalGroup.participants,
+        }])
+        .select()
+        .single();
+
+      if (groupError) {
+        console.error('Error copying group:', groupError);
+        throw groupError;
+      }
+
+      // Get all participants from the original group
+      const { data: originalParticipants, error: participantsError } = await supabase
+        .from('group_participants')
+        .select('*')
+        .eq('group_id', groupId);
+
+      if (participantsError) {
+        console.error('Error fetching original participants:', participantsError);
+        throw participantsError;
+      }
+
+      // Create a list of all participants including the new owner and original creator
+      const allParticipants = [...new Set([
+        ...originalParticipants.map(p => p.email),
+        user.email,
+        creatorProfile.email // Add original creator
+      ])];
+
+      // Get user profiles for the participants
+      const { data: profiles } = await supabase
+        .from('profiles')
+        .select('id, email')
+        .in('email', allParticipants);
+
+      const emailToUserId = new Map(profiles?.map(p => [p.email, p.id]) || []);
+
+      // Calculate initial contribution amount
+      const initialContributionAmount = originalGroup.price / allParticipants.length;
+
+      // Create participant entries for the new group
+      const newParticipants = allParticipants.map(email => ({
+        group_id: newGroup.id,
+        user_id: emailToUserId.get(email) || null,
+        email,
+        participation_status: email === user.email ? 'agreed' : 'pending', // New owner is automatically agreed
+        contribution_amount: initialContributionAmount
+      }));
+
+      const { error: insertError } = await supabase
+        .from('group_participants')
+        .insert(newParticipants);
+
+      if (insertError) {
+        console.error('Error adding participants to new group:', insertError);
+        throw insertError;
+      }
+
+      return newGroup.id;
+    } catch (error) {
+      console.error('Error in copySharedGroup:', error);
+      throw error;
+    }
+  }
 }
 
-export const groupsService = new GroupsService() 
+export const groupsService = new GroupsService()
+
+// Export the copySharedGroup function as a standalone function
+export const copySharedGroup = (groupId: string, userId: string): Promise<string> => {
+  return groupsService.copySharedGroup(groupId, userId)
+} 

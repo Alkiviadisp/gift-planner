@@ -1,6 +1,6 @@
 "use client"
 
-import { useState } from "react"
+import { useState, useEffect } from "react"
 import { format } from "date-fns"
 import DatePicker from "react-datepicker"
 import "react-datepicker/dist/react-datepicker.css"
@@ -104,7 +104,11 @@ export function CreateGroupDialog({
 }: CreateGroupDialogProps) {
   const [title, setTitle] = useState("")
   const [occasion, setOccasion] = useState("")
-  const [date, setDate] = useState<Date | null>(null)
+  const [date, setDate] = useState<Date | null>(() => {
+    const today = new Date()
+    today.setHours(12, 0, 0, 0)
+    return today
+  })
   const [price, setPrice] = useState("")
   const [productUrl, setProductUrl] = useState("")
   const [productImageUrl, setProductImageUrl] = useState<string>("")
@@ -113,6 +117,24 @@ export function CreateGroupDialog({
   const [participants, setParticipants] = useState<string[]>([])
   const [isValidEmail, setIsValidEmail] = useState(true)
   const { toast } = useToast()
+
+  // Reset form when dialog is closed
+  useEffect(() => {
+    if (!open) {
+      setTitle("")
+      setOccasion("")
+      const today = new Date()
+      today.setHours(12, 0, 0, 0)
+      setDate(today)
+      setPrice("")
+      setProductUrl("")
+      setProductImageUrl("")
+      setComments("")
+      setCurrentParticipant("")
+      setParticipants([])
+      setIsValidEmail(true)
+    }
+  }, [open])
 
   const validateEmail = (email: string) => {
     const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
@@ -229,34 +251,45 @@ export function CreateGroupDialog({
     }
 
     const newGroup: Omit<GiftGroup, "id" | "user_id" | "created_at" | "updated_at"> = {
+      name: title.trim(),
+      description: occasion.trim(),
+      amount: Number(price),
+      currency: 'EUR',
+      image_url: productImageUrl || undefined,
       title: title.trim(),
       occasion: occasion.trim(),
-      date,
+      date: date ? new Date(date.setHours(12, 0, 0, 0)) : new Date(),
       price: Number(price),
       product_url: productUrl.trim() || undefined,
       product_image_url: finalImageUrl || undefined,
       comments: comments.trim() || undefined,
-      participants,
+      participants: participants.map(email => ({ 
+        email,
+        participation_status: 'pending'
+      })),
       color: getRandomPastelColor(),
     }
 
     try {
       onCreateGroup(newGroup)
+      // Reset form
       setTitle("")
       setOccasion("")
-      setDate(null)
+      const today = new Date()
+      today.setHours(12, 0, 0, 0)
+      setDate(today)
       setPrice("")
       setProductUrl("")
       setProductImageUrl("")
       setComments("")
-      setParticipants([])
       setCurrentParticipant("")
+      setParticipants([])
       onOpenChange(false)
     } catch (error) {
       console.error('Error in create group dialog:', error)
       toast({
         title: "Error",
-        description: "Failed to create Group Gift. Please try again.",
+        description: "Failed to create gift group. Please try again.",
         variant: "destructive",
       })
     }

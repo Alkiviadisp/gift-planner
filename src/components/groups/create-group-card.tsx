@@ -5,6 +5,7 @@ import { Card, CardHeader } from "@/components/ui/card"
 import { Plus } from "lucide-react"
 import { CreateGroupDialog } from "./create-group-dialog"
 import type { GiftGroup } from "@/lib/groups/groups-service"
+import { cn } from "@/lib/utils"
 
 interface CreateGroupCardProps {
   onCreateGroup: (group: Omit<GiftGroup, "id" | "user_id" | "created_at" | "updated_at">) => void
@@ -21,14 +22,23 @@ export function CreateGroupCard({ onCreateGroup }: CreateGroupCardProps) {
   return (
     <>
       <Card 
-        className="hover:shadow-md transition-shadow group relative overflow-hidden cursor-pointer bg-white"
+        className={cn(
+          "hover:shadow-md transition-shadow border-dashed group relative overflow-hidden",
+          "hover:translate-y-[-2px] transition-all duration-200 cursor-pointer"
+        )}
         onClick={() => setShowDialog(true)}
+        role="button"
+        tabIndex={0}
+        onKeyDown={(e) => {
+          if (e.key === "Enter" || e.key === " ") {
+            e.preventDefault()
+            setShowDialog(true)
+          }
+        }}
       >
-        <CardHeader className="relative py-8">
-          <div className="flex items-center justify-center flex-col space-y-3">
-            <Plus className="h-6 w-6 text-gray-500" />
-            <p className="text-gray-500 text-base">Create Group Gift</p>
-          </div>
+        <CardHeader className="relative flex flex-col items-center justify-center min-h-[180px]">
+          <Plus className="h-8 w-8 text-muted-foreground mb-2" />
+          <span className="text-sm text-muted-foreground">Create Group Gift</span>
         </CardHeader>
       </Card>
 

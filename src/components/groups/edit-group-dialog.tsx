@@ -14,11 +14,86 @@ import { Textarea } from "@/components/ui/textarea"
 import type { GiftGroup } from "@/lib/groups/groups-service"
 import { cn } from "@/lib/utils"
 
+const getDefaultProductImage = (url: string): string => {
+  try {
+    const parsedUrl = new URL(url);
+    const domain = parsedUrl.hostname.toLowerCase();
+
+    // Amazon product image patterns
+    if (domain.includes('amazon.')) {
+      const dpMatch = url.match(/\/(?:dp|gp\/product)\/([A-Z0-9]{10})/i);
+      const productId = dpMatch?.[1];
+      if (productId) {
+        return `https://images-na.ssl-images-amazon.com/images/P/${productId}.jpg`;
+      }
+      
+      const imgMatch = url.match(/\/images\/I\/([A-Za-z0-9%-._]+\.(?:jpg|jpeg|png|gif))/i);
+      const imageId = imgMatch?.[1];
+      if (imageId) {
+        return `https://images-na.ssl-images-amazon.com/images/I/${imageId}`;
+      }
+    }
+
+    // Walmart patterns
+    if (domain.includes('walmart.')) {
+      const ipMatch = url.match(/\/ip\/([^\/]+)/);
+      const ipId = ipMatch?.[1];
+      if (ipId) {
+        return `https://i5.walmartimages.com/asr/${ipId}.jpg`;
+      }
+      
+      const imgMatch = url.match(/\/([a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12})/i);
+      const imgId = imgMatch?.[1];
+      if (imgId) {
+        return `https://i5.walmartimages.com/asr/${imgId}.jpg`;
+      }
+    }
+
+    // Target patterns
+    if (domain.includes('target.')) {
+      const dpMatch = url.match(/\/A-(\d+)/);
+      const productId = dpMatch?.[1];
+      if (productId) {
+        return `https://target.scene7.com/is/image/Target/${productId}`;
+      }
+    }
+
+    // Best Buy patterns
+    if (domain.includes('bestbuy.')) {
+      const skuMatch = url.match(/\/(\d+)\.p/);
+      const skuId = skuMatch?.[1];
+      if (skuId) {
+        return `https://pisces.bbystatic.com/image2/BestBuy_US/images/products/${skuId.slice(0, 4)}/${skuId.replace('.p', '_sd.jpg')}`;
+      }
+    }
+
+    // If no product image pattern matches, try to get a high-quality favicon
+    return getFaviconUrl(parsedUrl.hostname);
+  } catch (error) {
+    console.error('Error extracting product image:', error);
+    return getFaviconUrl(new URL(url).hostname);
+  }
+};
+
+const getFaviconUrl = (hostname: string): string => {
+  return `https://www.google.com/s2/favicons?domain=${hostname}&sz=128`;
+};
+
 interface EditGroupDialogProps {
   open: boolean
   onOpenChange: (open: boolean) => void
-  onUpdateGroup: (groupId: string, group: Omit<GiftGroup, "id" | "user_id" | "created_at" | "updated_at">) => void
-  group: GiftGroup
+  onUpdateGroup: (groupId: string, group: { 
+    name: string
+    description: string
+    amount: number
+    currency: string
+    date: Date
+    participants: string[]
+    image_url?: string
+  }) => void
+  group: GiftGroup & {
+    participants: Array<string | { email: string; participation_status?: string }>
+  }
 }
 
 const years = Array.from({ length: 10 }, (_, i) => new Date().getFullYear() + i)
@@ -35,13 +110,21 @@ export function EditGroupDialog({
 }: EditGroupDialogProps) {
   const [title, setTitle] = useState(group.title)
   const [occasion, setOccasion] = useState(group.occasion)
-  const [date, setDate] = useState<Date>(group.date)
+  const [date, setDate] = useState<Date>(() => {
+    // Ensure we have a valid date object
+    const dateValue = group.date instanceof Date ? group.date : new Date(group.date)
+    // Set time to noon to avoid timezone issues
+    dateValue.setHours(12, 0, 0, 0)
+    return dateValue
+  })
   const [price, setPrice] = useState(group.price.toString())
   const [productUrl, setProductUrl] = useState(group.product_url || "")
   const [productImageUrl, setProductImageUrl] = useState<string>(group.product_image_url || "")
   const [comments, setComments] = useState(group.comments || "")
   const [currentParticipant, setCurrentParticipant] = useState("")
-  const [participants, setParticipants] = useState<string[]>(group.participants)
+  const [participants, setParticipants] = useState<string[]>(
+    group.participants.map(p => typeof p === 'string' ? p : p.email)
+  )
   const [isValidEmail, setIsValidEmail] = useState(true)
   const { toast } = useToast()
 
@@ -49,12 +132,14 @@ export function EditGroupDialog({
   useEffect(() => {
     setTitle(group.title)
     setOccasion(group.occasion)
-    setDate(group.date)
+    const dateValue = group.date instanceof Date ? group.date : new Date(group.date)
+    dateValue.setHours(12, 0, 0, 0)
+    setDate(dateValue)
     setPrice(group.price.toString())
     setProductUrl(group.product_url || "")
     setProductImageUrl(group.product_image_url || "")
     setComments(group.comments || "")
-    setParticipants(group.participants)
+    setParticipants(group.participants.map(p => typeof p === 'string' ? p : p.email))
   }, [group])
 
   const handleProductUrlChange = (url: string) => {
@@ -150,16 +235,14 @@ export function EditGroupDialog({
       return
     }
 
-    const updatedGroup: Omit<GiftGroup, "id" | "user_id" | "created_at" | "updated_at"> = {
-      title: title.trim(),
-      occasion: occasion.trim(),
-      date,
-      price: Number(price),
-      product_url: productUrl.trim() || undefined,
-      product_image_url: productImageUrl || undefined,
-      comments: comments.trim() || undefined,
-      participants,
-      color: group.color, // Keep the existing color
+    const updatedGroup = {
+      name: title.trim(),
+      description: occasion.trim(),
+      amount: Number(price),
+      currency: group.currency || 'EUR',
+      image_url: productImageUrl || undefined,
+      date: new Date(date.setHours(12, 0, 0, 0)),
+      participants
     }
 
     try {
@@ -405,69 +488,4 @@ export function EditGroupDialog({
       </DialogContent>
     </Dialog>
   )
-}
-
-const getDefaultProductImage = (url: string): string => {
-  try {
-    const parsedUrl = new URL(url);
-    const domain = parsedUrl.hostname.toLowerCase();
-
-    // Amazon product image patterns
-    if (domain.includes('amazon.')) {
-      const dpMatch = url.match(/\/(?:dp|gp\/product)\/([A-Z0-9]{10})/i);
-      const productId = dpMatch?.[1];
-      if (productId) {
-        return `https://images-na.ssl-images-amazon.com/images/P/${productId}.jpg`;
-      }
-      
-      const imgMatch = url.match(/\/images\/I\/([A-Za-z0-9%-._]+\.(?:jpg|jpeg|png|gif))/i);
-      const imageId = imgMatch?.[1];
-      if (imageId) {
-        return `https://images-na.ssl-images-amazon.com/images/I/${imageId}`;
-      }
-    }
-
-    // Walmart patterns
-    if (domain.includes('walmart.')) {
-      const ipMatch = url.match(/\/ip\/([^\/]+)/);
-      const ipId = ipMatch?.[1];
-      if (ipId) {
-        return `https://i5.walmartimages.com/asr/${ipId}.jpg`;
-      }
-      
-      const imgMatch = url.match(/\/([a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12})/i);
-      const imgId = imgMatch?.[1];
-      if (imgId) {
-        return `https://i5.walmartimages.com/asr/${imgId}.jpg`;
-      }
-    }
-
-    // Target patterns
-    if (domain.includes('target.')) {
-      const dpMatch = url.match(/\/A-(\d+)/);
-      const productId = dpMatch?.[1];
-      if (productId) {
-        return `https://target.scene7.com/is/image/Target/${productId}`;
-      }
-    }
-
-    // Best Buy patterns
-    if (domain.includes('bestbuy.')) {
-      const skuMatch = url.match(/\/(\d{7}\.p)/);
-      const skuId = skuMatch?.[1];
-      if (skuId) {
-        return `https://pisces.bbystatic.com/image2/BestBuy_US/images/products/${skuId.slice(0, 4)}/${skuId.replace('.p', '_sd.jpg')}`;
-      }
-    }
-
-    // If no product image pattern matches, try to get a high-quality favicon
-    return getFaviconUrl(parsedUrl.hostname);
-  } catch (error) {
-    console.error('Error extracting product image:', error);
-    return getFaviconUrl(new URL(url).hostname);
-  }
-};
-
-const getFaviconUrl = (hostname: string): string => {
-  return `https://www.google.com/s2/favicons?domain=${hostname}&sz=128`;
-}; 
+} 

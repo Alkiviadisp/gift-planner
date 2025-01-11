@@ -110,6 +110,18 @@ create table if not exists gift_groups (
   updated_at timestamp with time zone default timezone('utc'::text, now()) not null
 );
 
+create table if not exists group_participants (
+  id uuid default uuid_generate_v4() primary key,
+  group_id uuid references gift_groups on delete cascade not null,
+  user_id uuid references auth.users on delete set null,
+  email text not null,
+  participation_status text check (participation_status in ('pending', 'agreed', 'declined')) default 'pending',
+  contribution_amount decimal(10,2) default 0,
+  agreed_at timestamp with time zone,
+  created_at timestamp with time zone default timezone('utc'::text, now()) not null,
+  updated_at timestamp with time zone default timezone('utc'::text, now()) not null
+);
+
 create table if not exists gifts (
   id uuid default uuid_generate_v4() primary key,
   user_id uuid references auth.users on delete cascade not null,
@@ -152,10 +164,29 @@ drop policy if exists "Users can create their own gifts" on gifts;
 drop policy if exists "Users can update their own gifts" on gifts;
 drop policy if exists "Users can delete their own gifts" on gifts;
 
--- Create policies for all tables
+-- Create policies for profiles
 create policy "Users can view their own profile"
   on profiles for select
-  using ( auth.uid() = id );
+  using (
+    -- Users can view their own profile
+    auth.uid() = id
+    -- Users can view profiles of participants in their groups
+    or id in (
+      select p.user_id
+      from group_participants p
+      join gift_groups g on g.id = p.group_id
+      where g.user_id = auth.uid()
+    )
+    -- Users can view profiles of group creators they're participating in
+    or id in (
+      select g.user_id
+      from group_participants p
+      join gift_groups g on g.id = p.group_id
+      where p.email = (
+        select email from profiles where id = auth.uid()
+      )
+    )
+  );
 
 create policy "Users can update their own profile"
   on profiles for update
@@ -666,4 +697,171 @@ begin
     );
   end loop;
 end;
-$$; 
+$$;
+
+-- Enable RLS for group_participants table
+alter table group_participants enable row level security;
+
+-- Drop existing policies for group_participants
+drop policy if exists "Users can view group participants" on group_participants;
+drop policy if exists "Users can create group participants" on group_participants;
+drop policy if exists "Users can update their own participation" on group_participants;
+drop policy if exists "Users can delete group participants" on group_participants;
+
+-- Create updated policies for group_participants
+create policy "Users can view group participants"
+  on group_participants for select
+  using (
+    -- Only group owners can view all participants
+    group_id in (
+      select id from gift_groups where user_id = auth.uid()
+    )
+    -- Participants can only view their own participation
+    or (
+      email in (select email from profiles where id = auth.uid())
+      and group_id in (
+        select group_id from group_participants 
+        where email = (select email from profiles where id = auth.uid())
+      )
+    )
+  );
+
+create policy "Only creators can add participants"
+  on group_participants for insert
+  with check (
+    group_id in (
+      select id from gift_groups where user_id = auth.uid()
+    )
+  );
+
+create policy "Users can update only their own participation status"
+  on group_participants for update
+  using (
+    email in (select email from profiles where id = auth.uid())
+    and (
+      -- Only allow updating participation_status and agreed_at
+      (
+        select count(*) = 0 
+        from jsonb_object_keys(to_jsonb(NEW) - to_jsonb(OLD)) k 
+        where k not in ('participation_status', 'agreed_at', 'updated_at')
+      )
+    )
+  );
+
+create policy "Only creators can delete participants"
+  on group_participants for delete
+  using (
+    group_id in (
+      select id from gift_groups where user_id = auth.uid()
+    )
+  );
+
+-- Drop existing policies for gift_groups
+drop policy if exists "Users can view gift groups" on gift_groups;
+drop policy if exists "Users can create their own gift groups" on gift_groups;
+drop policy if exists "Users can update their own gift groups" on gift_groups;
+drop policy if exists "Users can delete their own gift groups" on gift_groups;
+
+-- Create updated policies for gift_groups
+create policy "Users can view gift groups"
+  on gift_groups for select
+  using (
+    -- Users can view groups they created (with full details)
+    auth.uid() = user_id
+    -- Participants can view basic group info but not participant details
+    or id in (
+      select group_id
+      from group_participants
+      where email = (
+        select email from profiles where id = auth.uid()
+      )
+    )
+  );
+
+create policy "Users can create their own gift groups"
+  on gift_groups for insert
+  with check ( auth.uid() = user_id );
+
+create policy "Only creators can update gift groups"
+  on gift_groups for update
+  using ( auth.uid() = user_id );
+
+create policy "Only creators can delete gift groups"
+  on gift_groups for delete
+  using ( auth.uid() = user_id );
+
+-- Create function to calculate group contributions
+create or replace function calculate_group_contributions(p_group_id uuid)
+returns void
+language plpgsql
+security definer
+as $$
+declare
+  v_total_amount decimal(10,2);
+  v_participant_count integer;
+  v_contribution_amount decimal(10,2);
+begin
+  -- Get the group's total amount
+  select amount into v_total_amount
+  from gift_groups
+  where id = p_group_id;
+
+  -- Get the count of participants who have agreed or are pending
+  select count(*) into v_participant_count
+  from group_participants
+  where group_id = p_group_id
+  and participation_status != 'declined';
+
+  -- Calculate the contribution amount per participant
+  if v_participant_count > 0 then
+    v_contribution_amount := v_total_amount / v_participant_count;
+  else
+    v_contribution_amount := 0;
+  end if;
+
+  -- Update contribution amounts for all non-declined participants
+  update group_participants
+  set contribution_amount = v_contribution_amount
+  where group_id = p_group_id
+  and participation_status != 'declined';
+end;
+$$;
+
+-- Create function to get group participants
+create or replace function get_group_participants(p_group_id uuid)
+returns setof group_participants
+language plpgsql
+security definer
+as $$
+begin
+  return query
+  select *
+  from group_participants
+  where group_id = p_group_id;
+end;
+$$;
+
+-- Create function to update participant status
+create or replace function update_participant_status(
+  p_group_id uuid,
+  p_email text,
+  p_status text,
+  p_agreed_at timestamp with time zone
+)
+returns void
+language plpgsql
+security definer
+as $$
+begin
+  update group_participants
+  set participation_status = p_status,
+      agreed_at = p_agreed_at,
+      updated_at = now()
+  where group_id = p_group_id
+  and email = p_email;
+
+  -- Recalculate contributions after status update
+  perform calculate_group_contributions(p_group_id);
+end;
+$$;
+ 

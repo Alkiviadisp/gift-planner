@@ -1,6 +1,6 @@
 "use client"
 
-import { useState, useEffect } from "react"
+import { useState, useEffect, useCallback } from "react"
 import { CreateGroupCard } from "@/components/groups/create-group-card"
 import { GroupCard } from "@/components/groups/group-card"
 import { useSupabase } from "@/lib/supabase/provider"
@@ -13,6 +13,19 @@ import { ThemeToggleButton } from "@/components/layout/theme-toggle-button"
 import { Button } from "@/components/ui/button"
 import { AuthDialog } from "@/components/auth/auth-dialog"
 
+// This interface represents the form input, which is different from the database model
+interface CreateGroupFormInput {
+  title: string
+  occasion: string
+  date: Date
+  price: number
+  product_url?: string
+  product_image_url?: string
+  comments?: string
+  participants: string[]
+  color: string
+}
+
 export default function GroupsPage() {
   const [groups, setGroups] = useState<GiftGroup[]>([])
   const [isLoading, setIsLoading] = useState(true)
@@ -22,28 +35,22 @@ export default function GroupsPage() {
   const router = useRouter()
   const [showAuthDialog, setShowAuthDialog] = useState(false)
 
+  // Redirect if not authenticated
   useEffect(() => {
-    // If not loading and no user, redirect to login
     if (!user && !isLoading) {
-      console.log('No user found, redirecting to login...')
       router.push('/')
     }
   }, [user, isLoading, router])
 
-  const loadGroups = async () => {
-    if (!user) {
-      console.log('No user found in loadGroups')
-      return
-    }
+  // Memoize loadGroups to prevent unnecessary recreations
+  const loadGroups = useCallback(async () => {
+    if (!user) return
 
     try {
-      console.log('Loading groups for user:', user.id)
       const groups = await groupsService.getGroups(user.id)
-      console.log('Loaded groups:', groups)
       setGroups(groups)
       setError(null)
     } catch (error) {
-      console.error("Error loading groups:", error)
       setError("Failed to load Group Gifts")
       toast({
         title: "Error",
@@ -53,25 +60,33 @@ export default function GroupsPage() {
     } finally {
       setIsLoading(false)
     }
-  }
+  }, [user, toast])
 
+  // Load groups when user changes
   useEffect(() => {
-    console.log('User state changed:', user ? 'Logged in' : 'Not logged in')
     loadGroups()
-  }, [user])
+  }, [loadGroups])
 
-  const handleCreateGroup = async (group: Omit<GiftGroup, "id" | "user_id" | "created_at" | "updated_at">) => {
+  const handleCreateGroup = async (group: CreateGroupFormInput) => {
     if (!user) return
-
     try {
-      const newGroup = await groupsService.createGroup(user.id, group)
-      setGroups((prev) => [newGroup, ...prev])
+      await groupsService.createGroup({
+        name: group.title,
+        description: group.occasion,
+        amount: group.price,
+        currency: 'EUR',
+        imageUrl: group.product_image_url || null,
+        participants: group.participants.map(email => ({ email })),
+        date: group.date
+      })
+
+      await loadGroups()
+      
       toast({
-        title: "Success",
+        title: "Success", 
         description: "Group Gift created successfully!",
       })
     } catch (error) {
-      console.error("Error creating group:", error)
       toast({
         title: "Error",
         description: "Failed to create Group Gift. Please try again.",
@@ -81,17 +96,16 @@ export default function GroupsPage() {
   }
 
   const handleDeleteGroup = async (groupId: string) => {
-    if (!user) return;
+    if (!user) return
     
     try {
       await groupsService.deleteGroup(user.id, groupId)
-      setGroups((prev) => prev.filter((group) => group.id !== groupId))
+      await loadGroups()
       toast({
         title: "Success",
         description: "Group Gift deleted successfully!",
       })
     } catch (error) {
-      console.error("Error deleting group:", error)
       toast({
         title: "Error",
         description: "Failed to delete Group Gift. Please try again.",
@@ -100,16 +114,25 @@ export default function GroupsPage() {
     }
   }
 
-  const handleUpdateGroup = async (groupId: string, updatedGroup: Omit<GiftGroup, "id" | "user_id" | "created_at" | "updated_at">) => {
+  const handleUpdateGroup = async (groupId: string, updatedGroup: CreateGroupFormInput) => {
+    if (!user) return
     try {
-      const updated = await groupsService.updateGroup(groupId, updatedGroup)
-      setGroups((prev) => prev.map((group) => group.id === groupId ? updated : group))
+      await groupsService.updateGroup(groupId, {
+        name: updatedGroup.title,
+        description: updatedGroup.occasion,
+        amount: updatedGroup.price,
+        currency: 'EUR',
+        imageUrl: updatedGroup.product_image_url || null,
+        participants: updatedGroup.participants
+      })
+
+      await loadGroups()
+      
       toast({
         title: "Success",
         description: "Group Gift updated successfully!",
       })
     } catch (error) {
-      console.error("Error updating group:", error)
       toast({
         title: "Error",
         description: "Failed to update Group Gift. Please try again.",
@@ -121,7 +144,6 @@ export default function GroupsPage() {
   if (!user) {
     return (
       <div className="container py-8">
-        {/* Theme Toggle and Sign In */}
         <div className="absolute top-4 right-4 z-50 flex items-center gap-2">
           <ThemeToggleButton />
           <Button 
@@ -153,29 +175,42 @@ export default function GroupsPage() {
   }
 
   return (
-    <div className="container py-8 relative">
-      {/* User Menu */}
-      <div className="absolute top-4 right-4 z-50">
+    <div className="container py-8">
+      {/* Header with user menu */}
+      <div className="absolute top-4 right-4 z-50 flex items-center gap-2">
+        <ThemeToggleButton />
         <UserMenu />
       </div>
 
-      <h1 className="text-3xl font-bold mb-8">Group Gifts</h1>
-      
-      {error ? (
-        <div className="text-center py-8 text-red-500">{error}</div>
-      ) : (
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
+      {/* Main content */}
+      <div>
+        <h1 className="text-3xl font-bold mb-8">Group Gifts</h1>
+        
+        {/* Error message */}
+        {error && (
+          <div className="text-red-500 mb-4">
+            {error}
+          </div>
+        )}
+
+        {/* Groups grid */}
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
           <CreateGroupCard onCreateGroup={handleCreateGroup} />
           {groups.map((group) => (
-            <GroupCard 
-              key={group.id} 
+            <GroupCard
+              key={group.id}
               group={group}
               onDelete={() => handleDeleteGroup(group.id)}
               onUpdateGroup={handleUpdateGroup}
             />
           ))}
+          {groups.length === 0 && !error && (
+            <div className="col-span-full text-center py-8 text-muted-foreground">
+              No group gifts yet. Create one to get started!
+            </div>
+          )}
         </div>
-      )}
+      </div>
     </div>
   )
 } 
