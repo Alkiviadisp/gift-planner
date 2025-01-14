@@ -167,13 +167,21 @@ export default function ShareGroupClient({ id }: { id: string }) {
     if (!user || !group) return;
     setIsLoading(true);
     try {
+      // First update the participant status
       await participantService.updateParticipantStatus(group.id, user.email!, 'agreed');
       const updatedParticipants = await participantService.getGroupParticipants(group.id);
       setParticipants(updatedParticipants);
+
+      // Copy the group to the user's collection
+      await groupsService.copySharedGroup(group.id, user.id);
+      
       toast({
         title: "Success!",
         description: "You have agreed to contribute to this group gift",
       });
+
+      // Redirect to groups page
+      window.location.href = '/groups';
     } catch (error) {
       console.error('Error agreeing to contribute:', error);
       toast({
@@ -197,6 +205,8 @@ export default function ShareGroupClient({ id }: { id: string }) {
         title: "Success!",
         description: "You have declined to contribute to this group gift",
       });
+      // Redirect to groups page
+      window.location.href = '/groups';
     } catch (error) {
       console.error('Error declining to contribute:', error);
       toast({
@@ -431,14 +441,42 @@ export default function ShareGroupClient({ id }: { id: string }) {
       {!isSessionLoading && user && !isFromNotification && (
         <Card className="p-6 bg-blue-50 border-blue-200">
           <div className="flex flex-col sm:flex-row items-center justify-between gap-4">
-            <p className="text-blue-700">Add this group gift to your collection?</p>
-            <Button
-              variant="default"
-              onClick={handleAddToMyGroups}
-              disabled={isLoading}
-            >
-              {isLoading ? "Adding..." : "Add to My Groups"}
-            </Button>
+            {!userParticipant ? (
+              <>
+                <p className="text-blue-700">Would you like to contribute to this group gift?</p>
+                <div className="flex gap-2">
+                  <Button
+                    variant="outline"
+                    onClick={handleDecline}
+                    disabled={isLoading}
+                    className="text-red-600 hover:text-red-700 hover:bg-red-50"
+                  >
+                    <X className="h-4 w-4 mr-2" />
+                    {isLoading ? "Declining..." : "Decline"}
+                  </Button>
+                  <Button
+                    variant="default"
+                    onClick={handleAgree}
+                    disabled={isLoading}
+                    className="bg-green-600 hover:bg-green-700"
+                  >
+                    <Check className="h-4 w-4 mr-2" />
+                    {isLoading ? "Accepting..." : "Accept"}
+                  </Button>
+                </div>
+              </>
+            ) : (
+              <>
+                <p className={cn(
+                  "font-medium",
+                  userParticipant.participation_status === 'agreed' ? "text-green-600" : "text-red-600"
+                )}>
+                  {userParticipant.participation_status === 'agreed' 
+                    ? "You are contributing to this group gift" 
+                    : "You have declined this group gift"}
+                </p>
+              </>
+            )}
           </div>
         </Card>
       )}
@@ -465,8 +503,8 @@ export default function ShareGroupClient({ id }: { id: string }) {
             <div className="flex items-center gap-3 p-4 bg-gray-50 rounded-lg">
               <DollarSign className="h-5 w-5 text-green-500" />
               <div>
-                <p className="text-sm text-gray-500">Total Amount</p>
-                <p className="font-medium">${group.price.toFixed(2)}</p>
+                <p className="text-sm text-gray-500">Amount per Person</p>
+                <p className="font-medium">${(group.price / (participants.length || 1)).toFixed(2)}</p>
               </div>
             </div>
             <div className="flex items-center gap-3 p-4 bg-gray-50 rounded-lg">
@@ -484,6 +522,60 @@ export default function ShareGroupClient({ id }: { id: string }) {
               </div>
             </div>
           </div>
+
+          {/* Progress Section */}
+          <div className="mt-6 p-4 bg-gray-50 rounded-lg space-y-2">
+            <div className="flex justify-between text-sm">
+              <span className="text-gray-600 font-medium">Progress</span>
+              <span className="font-medium">${totalContributions.toFixed(2)} of ${group.price.toFixed(2)}</span>
+            </div>
+            <Progress value={progress} className="h-2" />
+            <div className="flex justify-between items-center">
+              <p className="text-xs text-gray-600">
+                {progress < 100 
+                  ? `${(100 - progress).toFixed(1)}% remaining`
+                  : <span className="text-green-600 font-medium">Goal reached! 🎉</span>}
+              </p>
+            </div>
+          </div>
+
+          {/* Action Buttons - Only show if user is logged in and not from notification */}
+          {!isSessionLoading && user && !isFromNotification && userParticipant && (
+            <div className="mt-6">
+              {userParticipant.participation_status === 'pending' ? (
+                <div className="flex gap-2 justify-end">
+                  <Button
+                    variant="outline"
+                    onClick={handleDecline}
+                    disabled={isLoading}
+                    className="text-red-600 hover:text-red-700 hover:bg-red-50"
+                  >
+                    <X className="h-4 w-4 mr-2" />
+                    Decline
+                  </Button>
+                  <Button
+                    variant="default"
+                    onClick={handleAgree}
+                    disabled={isLoading}
+                    className="bg-green-600 hover:bg-green-700"
+                  >
+                    <Check className="h-4 w-4 mr-2" />
+                    Accept
+                  </Button>
+                </div>
+              ) : (
+                <div className="text-center p-4 bg-gray-50 rounded-lg">
+                  <p className="text-sm text-gray-600">
+                    {userParticipant.participation_status === 'agreed' ? (
+                      <span className="text-green-600">You are contributing to this group gift</span>
+                    ) : (
+                      <span className="text-red-600">You have declined this group gift</span>
+                    )}
+                  </p>
+                </div>
+              )}
+            </div>
+          )}
 
           {/* Product Section */}
           {group.product_url && (

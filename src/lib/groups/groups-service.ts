@@ -107,21 +107,34 @@ export class GroupsService {
     try {
       console.log('=== START NOTIFICATION PROCESS ===');
       console.log('Attempting to send notification for group:', groupId);
+      console.log('Looking up profile for email:', email);
       
+      // First verify the email format
+      if (typeof email !== 'string') {
+        console.error('Invalid email format:', email);
+        return;
+      }
+
       // Get user profile directly by email
-      console.log('Looking up user profile...');
+      console.log('Querying profiles table...');
       const { data: profiles, error: profileError } = await supabase
         .from('profiles')
         .select('id, email')
-        .eq('email', email)
+        .eq('email', email.toLowerCase()) // Ensure case-insensitive comparison
         .single();
 
       if (profileError) {
+        console.error('Profile lookup error:', {
+          code: profileError.code,
+          message: profileError.message,
+          details: profileError.details,
+          hint: profileError.hint
+        });
+        
         if (profileError.code === 'PGRST116') { // No rows found
           console.log('No matching user profile found');
           return; // User doesn't exist, do nothing
         }
-        console.error('Error looking up user profile');
         throw profileError;
       }
 
@@ -130,9 +143,13 @@ export class GroupsService {
         return; // User doesn't exist, do nothing
       }
 
-      console.log('User profile found');
+      console.log('User profile found:', {
+        id: profiles.id,
+        email: profiles.email
+      });
 
       // Call the create_notification function with required parameters first
+      console.log('Creating notification for user:', profiles.id);
       const { data: notifData, error: notifError } = await supabase
         .rpc('create_notification', {
           p_user_id: profiles.id,
@@ -152,16 +169,22 @@ export class GroupsService {
         });
 
       if (notifError) {
-        console.error('Error sending notification');
+        console.error('Error sending notification:', {
+          code: notifError.code,
+          message: notifError.message,
+          details: notifError.details,
+          hint: notifError.hint
+        });
         throw notifError;
       }
 
       console.log('Successfully sent notification');
       console.log('=== END NOTIFICATION PROCESS ===');
     } catch (error: any) {
-      console.error('Error in sendParticipantNotification');
-      console.error('Error details:', {
-        code: error.code
+      console.error('Error in sendParticipantNotification:', {
+        error: error,
+        email: email,
+        groupId: groupId
       });
     }
   }
@@ -253,10 +276,16 @@ export class GroupsService {
       // Send notifications to participants (except the creator)
       for (const participant of participants) {
         if (participant.email !== user.email) {
+          // Get the email string from the participant object
+          const participantEmail = typeof participant.email === 'object' && (participant.email as { email: string }).email 
+            ? (participant.email as { email: string }).email 
+            : participant.email;
+            
+          console.log('Sending notification to participant:', participantEmail);
           await this.sendParticipantNotification(
-            participant.email,
+            participantEmail,
             newGroup.id,
-            newGroup.name,
+            group.name,
             user.id
           );
         }
@@ -555,7 +584,6 @@ export class GroupsService {
   }
 
   async copySharedGroup(groupId: string, userId: string): Promise<string> {
-    const supabase = createClientComponentClient()
     try {
       // Get the original group details
       const originalGroup = await this.getGroupById(groupId);

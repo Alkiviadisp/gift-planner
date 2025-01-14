@@ -13,6 +13,7 @@ import { ChevronLeft, ChevronRight, Plus, X, ExternalLink } from "lucide-react"
 import { Textarea } from "@/components/ui/textarea"
 import type { GiftGroup } from "@/lib/groups/groups-service"
 import { cn } from "@/lib/utils"
+import { GroupParticipant, ParticipantStatus } from "@/lib/supabase/database.types"
 
 const getDefaultProductImage = (url: string): string => {
   try {
@@ -92,7 +93,7 @@ interface EditGroupDialogProps {
     image_url?: string
   }) => void
   group: GiftGroup & {
-    participants: Array<string | { email: string; participation_status?: string }>
+    participants: Array<string | GroupParticipant>
   }
 }
 
@@ -122,9 +123,13 @@ export function EditGroupDialog({
   const [productImageUrl, setProductImageUrl] = useState<string>(group.product_image_url || "")
   const [comments, setComments] = useState(group.comments || "")
   const [currentParticipant, setCurrentParticipant] = useState("")
-  const [participants, setParticipants] = useState<string[]>(
-    group.participants.map(p => typeof p === 'string' ? p : p.email)
-  )
+  const [participants, setParticipants] = useState<string[]>(() => {
+    return group.participants.map((p) => {
+      if (typeof p === 'string') return p;
+      if ('email' in p) return p.email;
+      throw new Error('Invalid participant type');
+    });
+  });
   const [isValidEmail, setIsValidEmail] = useState(true)
   const { toast } = useToast()
 
@@ -139,7 +144,11 @@ export function EditGroupDialog({
     setProductUrl(group.product_url || "")
     setProductImageUrl(group.product_image_url || "")
     setComments(group.comments || "")
-    setParticipants(group.participants.map(p => typeof p === 'string' ? p : p.email))
+    setParticipants(group.participants.map((p) => {
+      if (typeof p === 'string') return p;
+      if ('email' in p) return p.email;
+      throw new Error('Invalid participant type');
+    }));
   }, [group])
 
   const handleProductUrlChange = (url: string) => {
