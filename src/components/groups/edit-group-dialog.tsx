@@ -124,7 +124,7 @@ export function EditGroupDialog({
   const [comments, setComments] = useState(group.comments || "")
   const [currentParticipant, setCurrentParticipant] = useState("")
   const [participants, setParticipants] = useState<string[]>(() => {
-    return group.participants.map((p) => {
+    return group.participants.map((p: string | GroupParticipant) => {
       if (typeof p === 'string') return p;
       if ('email' in p) return p.email;
       throw new Error('Invalid participant type');
@@ -144,7 +144,7 @@ export function EditGroupDialog({
     setProductUrl(group.product_url || "")
     setProductImageUrl(group.product_image_url || "")
     setComments(group.comments || "")
-    setParticipants(group.participants.map((p) => {
+    setParticipants(group.participants.map((p: string | GroupParticipant) => {
       if (typeof p === 'string') return p;
       if ('email' in p) return p.email;
       throw new Error('Invalid participant type');

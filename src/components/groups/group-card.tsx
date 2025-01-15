@@ -67,21 +67,41 @@ export function GroupCard({ group, onDelete, onUpdateGroup }: GroupCardProps) {
           .eq('id', group.id)
           .single();
 
-        if (groupError || !groupExists) {
-          console.log('Group no longer exists:', group.id);
-          isDeleted = true;
+        // Handle case where group doesn't exist (including after deletion)
+        if (groupError?.code === 'PGRST116' || groupError?.code === '406') {
           if (isMounted) {
-            onDelete(); // Remove the card if group doesn't exist
+            isDeleted = true;
+            onDelete();
           }
           return;
         }
 
+        // Handle other errors
+        if (groupError) {
+          throw groupError;
+        }
+
+        // Handle case where query succeeded but no group was found
+        if (!groupExists && isMounted) {
+          isDeleted = true;
+          onDelete();
+          return;
+        }
+
+        // If we get here, group exists, so load participants
         const participants = await participantService.getGroupParticipants(group.id);
         if (isMounted && !isDeleted) {
           setParticipants(participants);
         }
       } catch (error) {
-        console.error('Error loading participants:', error);
+        // Only log errors that aren't related to group not existing
+        const isPostgrestError = (err: unknown): err is { code: string } => {
+          return typeof err === 'object' && err !== null && 'code' in err;
+        };
+        
+        if (!isPostgrestError(error) || (error.code !== 'PGRST116' && error.code !== '406')) {
+          console.error('Error loading participants:', error);
+        }
         // Only set participants to empty if the group still exists and component is mounted
         if (isMounted && !isDeleted) {
           setParticipants([]);
@@ -92,7 +112,7 @@ export function GroupCard({ group, onDelete, onUpdateGroup }: GroupCardProps) {
     loadParticipants();
 
     // Only set up subscription if group isn't deleted
-    let channel;
+    let channel: ReturnType<typeof supabase.channel> | undefined;
     if (!isDeleted) {
       channel = supabase
         .channel(`group_${group.id}_participants`)
@@ -479,7 +499,15 @@ export function GroupCard({ group, onDelete, onUpdateGroup }: GroupCardProps) {
         group={group}
         open={showEditDialog}
         onOpenChange={setShowEditDialog}
-        onUpdateGroup={onUpdateGroup}
+        onUpdateGroup={(groupId: string, updates) => {
+          onUpdateGroup(groupId, {
+            ...updates,
+            title: updates.name,
+            occasion: updates.description,
+            price: updates.amount,
+            color: group.color
+          });
+        }}
       />
     </>
   )
