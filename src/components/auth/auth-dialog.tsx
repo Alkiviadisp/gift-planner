@@ -9,6 +9,7 @@ import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { useToast } from "@/components/ui/use-toast"
 import { supabase } from "@/lib/supabase/client"
+import { MultiStepSignup } from "./multi-step-signup"
 
 interface AuthDialogProps {
   open: boolean
@@ -263,60 +264,9 @@ export function AuthDialog({ open, onOpenChange }: AuthDialogProps) {
           </TabsContent>
 
           <TabsContent value="sign-up">
-            <form onSubmit={handleSubmit} data-action="sign-up" className="space-y-4 py-4">
-              <div className="space-y-2">
-                <Label htmlFor="sign-up-nickname">Nickname</Label>
-                <Input
-                  id="sign-up-nickname"
-                  name="nickname"
-                  placeholder="Your preferred name"
-                  required
-                  disabled={isLoading}
-                />
-              </div>
-              <div className="space-y-2">
-                <Label htmlFor="sign-up-email">Email</Label>
-                <Input
-                  id="sign-up-email"
-                  name="email"
-                  type="email"
-                  placeholder="m@example.com"
-                  required
-                  disabled={isLoading}
-                />
-              </div>
-              <div className="space-y-2">
-                <Label htmlFor="sign-up-password">Password</Label>
-                <Input
-                  id="sign-up-password"
-                  name="password"
-                  type="password"
-                  required
-                  disabled={isLoading}
-                  onChange={handlePasswordChange}
-                />
-                {errors.password && (
-                  <p className="text-sm text-destructive">{errors.password}</p>
-                )}
-                <div className="space-y-2">
-                  <p className="text-sm text-muted-foreground">
-                    Password must be at least 8 characters long and contain:
-                  </p>
-                  <ul className="text-sm text-muted-foreground list-disc pl-4">
-                    <li>One uppercase letter</li>
-                    <li>One lowercase letter</li>
-                    <li>One number</li>
-                  </ul>
-                </div>
-              </div>
-              <Button 
-                type="submit" 
-                className="w-full" 
-                disabled={isLoading || (errors.password !== "")}
-              >
-                {isLoading ? "Creating account..." : "Create Account"}
-              </Button>
-            </form>
+            <div className="py-4">
+              <MultiStepSignup />
+            </div>
           </TabsContent>
 
           <div className="relative my-4">
