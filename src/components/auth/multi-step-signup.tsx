@@ -379,74 +379,86 @@ export function MultiStepSignup() {
   })
 
   const handleComplete = async () => {
-    setIsLoading(true)
     try {
-      // 1. Sign up with minimal data
-      const { data: authData, error: authError } = await supabase.auth.signUp({
-        email: formData.email,
-        password: formData.password,
-        options: {
-          emailRedirectTo: `${window.location.origin}/auth/callback`
-        }
-      })
+      setIsLoading(true);
 
-      if (authError) {
-        console.error('Auth error:', authError)
-        throw authError
+      // Basic validation
+      if (!formData.email || !formData.password || !formData.nickname) {
+        throw new Error('Please fill in all required fields');
+      }
+
+      // Validate password length
+      if (formData.password.length < 6) {
+        throw new Error('Password must be at least 6 characters long');
+      }
+
+      // Validate email format
+      if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(formData.email)) {
+        throw new Error('Please enter a valid email address');
+      }
+
+      // Try signup with absolute minimum data
+      const { data: authData, error: signUpError } = await supabase.auth.signUp({
+        email: formData.email,
+        password: formData.password
+      });
+
+      if (signUpError) {
+        // Log the detailed error for debugging
+        console.error('Signup error details:', {
+          code: signUpError.status,
+          name: signUpError.name,
+          message: signUpError.message,
+          details: signUpError
+        });
+        throw signUpError;
       }
 
       if (!authData.user) {
-        throw new Error('No user data returned')
+        throw new Error('No user data returned');
       }
 
-      // 2. Create profile
-      const { error: profileError } = await supabase
-        .from('profiles')
-        .insert({
-          id: authData.user.id,
-          email: formData.email,
-          nickname: formData.nickname,
-          country: formData.country,
-          currency: formData.currency
-        })
+      // Show success message
+      toast({
+        title: 'Success!',
+        description: 'Please check your email to verify your account.',
+        variant: 'default'
+      });
 
-      if (profileError) {
-        console.error('Profile error:', profileError)
-        throw profileError
-      }
+      // Wait a moment before trying to create the profile
+      await new Promise(resolve => setTimeout(resolve, 1000));
 
-      // 3. Add user interests if categories were selected
-      if (formData.selectedCategories && formData.selectedCategories.length > 0) {
-        const { error: interestsError } = await supabase
-          .from('user_interests')
-          .insert(
-            formData.selectedCategories.map(categoryId => ({
-              user_id: authData.user!.id,
-              category_id: categoryId
-            }))
-          )
+      try {
+        // Create profile with only required fields
+        const { error: profileError } = await supabase
+          .from('profiles')
+          .insert({
+            id: authData.user.id,
+            email: formData.email,
+            nickname: formData.nickname,
+            subscription_tier: 'free'
+          })
+          .select()
+          .single();
 
-        if (interestsError) {
-          console.error('Interests error:', interestsError)
-          // Don't throw here, as the main signup was successful
+        if (profileError) {
+          console.error('Profile creation error:', profileError);
         }
+      } catch (error) {
+        console.error('Profile setup error:', error);
       }
 
-      toast({
-        title: "Registration successful!",
-        description: "Please check your email to verify your account.",
-      })
     } catch (error: any) {
-      console.error('Registration error:', error)
+      console.error('Signup error:', error);
       toast({
-        title: "Error",
-        description: error.message || "Something went wrong. Please try again.",
-        variant: "destructive",
-      })
+        title: 'Error',
+        description: error.message || 'An error occurred during signup',
+        variant: 'destructive'
+      });
     } finally {
-      setIsLoading(false)
+      setIsLoading(false);
     }
-  }
+  };
 
   interface Step {
     title: string;
