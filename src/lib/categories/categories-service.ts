@@ -60,16 +60,16 @@ export const categoriesService = {
       // First check if the user has access to their profile
       const { data: profileData, error: profileError } = await supabase
         .from('profiles')
-        .select('id')
+        .select('count')
         .eq('id', userId)
-        .single()
+        .limit(1)
 
-      if (profileError) {
+      if (profileError || !profileData || profileData.length === 0) {
         console.error('Profile access check failed:', {
           error: profileError,
-          code: profileError.code,
-          message: profileError.message,
-          details: profileError.details,
+          code: profileError?.code,
+          message: profileError?.message,
+          details: profileError?.details,
           userId
         })
         return false

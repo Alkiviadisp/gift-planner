@@ -397,20 +397,14 @@ export function MultiStepSignup() {
         throw new Error('Please enter a valid email address');
       }
 
-      // Try signup with absolute minimum data
+      // Simple signup first
       const { data: authData, error: signUpError } = await supabase.auth.signUp({
         email: formData.email,
         password: formData.password
       });
 
       if (signUpError) {
-        // Log the detailed error for debugging
-        console.error('Signup error details:', {
-          code: signUpError.status,
-          name: signUpError.name,
-          message: signUpError.message,
-          details: signUpError
-        });
+        console.error('Signup error:', signUpError);
         throw signUpError;
       }
 
@@ -425,27 +419,62 @@ export function MultiStepSignup() {
         variant: 'default'
       });
 
-      // Wait a moment before trying to create the profile
+      // Wait for the trigger to create the profile and session to be established
       await new Promise(resolve => setTimeout(resolve, 1000));
 
-      try {
-        // Create profile with only required fields
-        const { error: profileError } = await supabase
-          .from('profiles')
-          .insert({
-            id: authData.user.id,
-            email: formData.email,
-            nickname: formData.nickname,
-            subscription_tier: 'free'
-          })
-          .select()
-          .single();
+      // Get the current session
+      const { data: { session }, error: sessionError } = await supabase.auth.getSession();
+      
+      if (sessionError) {
+        console.error('Session error:', sessionError);
+        throw sessionError;
+      }
 
-        if (profileError) {
-          console.error('Profile creation error:', profileError);
+      if (!session) {
+        console.log('No session available yet, skipping profile update');
+        return;
+      }
+
+      // Update profile with additional information
+      if (formData.country || formData.currency || formData.nickname) {
+        const { error: updateError } = await supabase
+          .from('profiles')
+          .update({
+            nickname: formData.nickname,
+            country: formData.country,
+            currency: formData.currency
+          })
+          .eq('id', session.user.id);
+
+        if (updateError) {
+          console.error('Profile update error:', updateError);
+          toast({
+            title: 'Warning',
+            description: 'Some profile information could not be saved. You can update it later in your settings.',
+            variant: 'destructive'
+          });
         }
-      } catch (error) {
-        console.error('Profile setup error:', error);
+      }
+
+      // Create user interests if selected
+      if (formData.selectedCategories?.length > 0 && session) {
+        const { error: interestsError } = await supabase
+          .from('user_interests')
+          .insert(
+            formData.selectedCategories.map((categoryId: string) => ({
+              user_id: session.user.id,
+              category_id: categoryId
+            }))
+          );
+
+        if (interestsError) {
+          console.error('Interests creation error:', interestsError);
+          toast({
+            title: 'Warning',
+            description: 'Your interests could not be saved. You can update them later in your settings.',
+            variant: 'destructive'
+          });
+        }
       }
 
     } catch (error: any) {
@@ -488,7 +517,7 @@ export function MultiStepSignup() {
 
   // Ensure step is within bounds and has a valid value
   const currentStep = Math.max(0, Math.min(step - 1, 2)) // We know we have exactly 3 steps
-  
+
   // Runtime safety check
   if (!steps[currentStep]) {
     console.error('Invalid step index:', currentStep);
@@ -533,4 +562,4 @@ export function MultiStepSignup() {
       />
     </div>
   )
-} 
+}

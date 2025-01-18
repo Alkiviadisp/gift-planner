@@ -51,8 +51,8 @@ interface UpdateGroupInput {
 
 export class GroupsService {
   async getGroups(userId: string): Promise<GiftGroup[]> {
-    // First get all groups
-    const { data: groups, error } = await supabase
+    // First get groups where user is the owner
+    const { data: ownedGroups, error: ownedError } = await supabase
       .from("gift_groups")
       .select(`
         *,
@@ -62,13 +62,37 @@ export class GroupsService {
           participation_status
         )
       `)
-      .eq("user_id", userId)
+      .eq('user_id', userId)
       .order("created_at", { ascending: false });
 
-    if (error) {
-      console.error("Database error in getGroups:", error);
-      throw error;
+    if (ownedError) {
+      console.error("Database error in getGroups (owned):", ownedError);
+      throw ownedError;
     }
+
+    // Then get groups where user is a participant
+    const { data: participatedGroups, error: participatedError } = await supabase
+      .from("gift_groups")
+      .select(`
+        *,
+        group_participants (
+          id,
+          email,
+          participation_status
+        )
+      `)
+      .neq('user_id', userId) // Exclude groups where user is owner
+      .eq('group_participants.user_id', userId)
+      .eq('group_participants.participation_status', 'accepted')
+      .order("created_at", { ascending: false });
+
+    if (participatedError) {
+      console.error("Database error in getGroups (participated):", participatedError);
+      throw participatedError;
+    }
+
+    // Combine both sets of groups
+    const groups = [...(ownedGroups || []), ...(participatedGroups || [])];
 
     // Get the user's email
     const { data: { user } } = await supabase.auth.getUser();
